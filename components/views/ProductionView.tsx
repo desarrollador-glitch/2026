@@ -141,7 +141,6 @@ const ProductionView: React.FC<ProductionViewProps> = ({
                        {/* VISUAL REFERENCE & DOWNLOADS */}
                        {/* ... (Kept similar logic) */}
                        
-                       {/* VISUAL REFERENCE */}
                        {order.designImage && (
                            <div className="mb-3">
                                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1">

@@ -3,10 +3,11 @@ import { UserRole } from './types';
 import RoleSwitcher from './components/RoleSwitcher';
 import PawModal from './components/PawModal';
 import { useOrderSystem } from './hooks/useOrderSystem';
-import { useSession } from './src/components/SessionContextProvider'; // Importar useSession
-import LoginPage from './src/pages/LoginPage'; // Importar LoginPage
+import { useSession } from './src/components/SessionContextProvider';
+import LoginPage from './src/pages/LoginPage';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from './src/integrations/supabase/client';
+import toast from 'react-hot-toast'; // Importar toast
 
 // Views
 import ClientView from './components/views/ClientView';
@@ -16,10 +17,10 @@ import AdminView from './components/views/AdminView';
 
 const App: React.FC = () => {
   const { session, loading: sessionLoading } = useSession();
-  const [userRole, setUserRole] = useState<UserRole | null>(null); // Estado para el rol real del usuario
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   // Fetch user profile and role from Supabase
-  const { data: profile, isLoading: profileLoading } = useQuery({
+  const { data: profile, isLoading: profileLoading, error: profileError } = useQuery({
     queryKey: ['userProfile', session?.user?.id],
     queryFn: async () => {
       if (!session?.user?.id) return null;
@@ -31,36 +32,40 @@ const App: React.FC = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!session && !sessionLoading, // Solo ejecutar si hay sesión y no está cargando
-    staleTime: Infinity, // El rol no cambia a menudo
+    enabled: !!session && !sessionLoading,
+    staleTime: Infinity,
   });
 
   useEffect(() => {
     if (profile?.role) {
       setUserRole(profile.role as UserRole);
     } else if (!session && !sessionLoading) {
-      setUserRole(null); // Si no hay sesión, no hay rol
+      setUserRole(null);
     }
-  }, [profile, session, sessionLoading]);
+    if (profileError) {
+      toast.error(`Error al cargar perfil: ${profileError.message}`);
+    }
+  }, [profile, session, sessionLoading, profileError]);
 
-  // Encapsulated Business Logic (will be migrated to Supabase)
+  // New useOrderSystem hook
   const {
     orders,
-    isProcessing,
+    isLoading,
+    error,
     updateSlot,
     updateSleeve,
-    handleImageUpload,
-    handleEditImage,
-    submitDesign,
-    handleClientReview,
-    updateOrderStatus,
-    reportIssue,
-    resolveIssue,
-    handleEvidenceUpload,
-    resetSystem // This will become a logout function
+    onInitiateUpload,
+    onEditImage,
+    onSubmitDesign,
+    onReviewDesign,
+    onUpdateStatus,
+    onReportIssue,
+    onResolveIssue,
+    onUploadEvidence,
+    handleLogout,
   } = useOrderSystem();
 
-  // Local UI State for Modal
+  // Local UI State for PawModal
   const [pendingUpload, setPendingUpload] = useState<{
       file: File;
       orderId: string;
@@ -70,23 +75,14 @@ const App: React.FC = () => {
 
   const confirmUpload = async () => {
     if (pendingUpload) {
-        await handleImageUpload(
-            pendingUpload.file, 
-            pendingUpload.orderId, 
-            pendingUpload.itemId, 
-            pendingUpload.slotId
+        await onInitiateUpload(
+            { file: pendingUpload.file, orderId: pendingUpload.orderId, itemId: pendingUpload.itemId, slotId: pendingUpload.slotId }
         );
         setPendingUpload(null);
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUserRole(null); // Limpiar el rol al cerrar sesión
-    resetSystem(); // Esto también limpiará localStorage y recargará
-  };
-
-  if (sessionLoading || profileLoading) {
+  if (sessionLoading || isLoading || profileLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-700">
         Cargando aplicación...
@@ -98,56 +94,63 @@ const App: React.FC = () => {
     return <LoginPage />;
   }
 
-  // Si hay sesión y rol, renderizar la aplicación principal
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-red-50 text-red-700">
+        Error al cargar órdenes: {error.message}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <RoleSwitcher 
-        currentRole={userRole || UserRole.CLIENT} // Usar el rol real, o CLIENT como fallback
-        onRoleChange={() => { /* No-op, el rol se determina por Supabase */ }} 
-        onReset={handleLogout} // Ahora es un botón de cerrar sesión
+      <RoleSwitcher
+        currentRole={userRole || UserRole.CLIENT}
+        onRoleChange={() => { /* No-op, el rol se determina por Supabase */ }}
+        onReset={handleLogout}
       />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
+
         {userRole === UserRole.CLIENT && (
-            <ClientView 
+            <ClientView
                 orders={orders}
-                isProcessing={isProcessing}
-                onUpdateSlot={updateSlot}
-                onUpdateSleeve={updateSleeve}
+                isProcessing={isLoading} // Usar isLoading general para deshabilitar UI
+                onUpdateSlot={(orderId, itemId, slotId, updates) => updateSlot({ orderId, itemId, slotId, updates })}
+                onUpdateSleeve={(orderId, itemId, config) => updateSleeve({ orderId, itemId, config })}
                 onInitiateUpload={(file, orderId, itemId, slotId) => setPendingUpload({ file, orderId, itemId, slotId })}
-                onEditImage={handleEditImage}
-                onReviewDesign={handleClientReview}
+                onEditImage={(orderId, itemId, slotId, currentImage, prompt) => onEditImage({ orderId, itemId, slotId, currentImage, prompt })}
+                onReviewDesign={(orderId, approved, feedback) => onReviewDesign({ orderId, approved, feedback })}
             />
         )}
 
         {userRole === UserRole.DESIGNER && (
-            <DesignerView 
+            <DesignerView
                 orders={orders}
-                onSubmitDesign={submitDesign}
+                onSubmitDesign={(orderId, assets) => onSubmitDesign({ orderId, assets })}
             />
         )}
 
         {userRole === UserRole.EMBROIDERER && (
-            <ProductionView 
+            <ProductionView
                 orders={orders}
                 currentRole={userRole}
-                onUpdateStatus={updateOrderStatus}
-                onReportIssue={reportIssue}
-                onResolveIssue={resolveIssue}
-                onUploadEvidence={handleEvidenceUpload}
+                onUpdateStatus={(orderId, newStatus) => onUpdateStatus({ orderId, newStatus })}
+                onReportIssue={(orderId, reason) => onReportIssue({ orderId, reason })}
+                onResolveIssue={(orderId) => onResolveIssue({ orderId })}
+                onUploadEvidence={(file, orderId, field) => onUploadEvidence({ file, orderId, field })}
             />
         )}
 
         {userRole === UserRole.ADMIN && (
-            <AdminView 
+            <AdminView
                 orders={orders}
             />
         )}
 
       </main>
 
-      <PawModal 
+      <PawModal
             isOpen={!!pendingUpload}
             onClose={() => setPendingUpload(null)}
             onConfirm={confirmUpload}

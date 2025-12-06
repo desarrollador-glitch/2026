@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Order, OrderStatus, SleeveConfig, OrderItem, EmbroiderySlot } from '../../types';
 import { QUICK_EDITS } from '../../constants';
