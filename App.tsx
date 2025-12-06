@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { UserRole } from './types';
 import RoleSwitcher from './components/RoleSwitcher';
 import PawModal from './components/PawModal';
 import { useOrderSystem } from './hooks/useOrderSystem';
 import { useSession } from './src/components/SessionContextProvider';
-import LoginPage from './src/pages/LoginPage';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from './src/integrations/supabase/client';
-import toast from 'react-hot-toast'; // Importar toast
+// import LoginPage from './src/pages/LoginPage'; // DESHABILITADO
+import toast from 'react-hot-toast';
 
 // Views
 import ClientView from './components/views/ClientView';
@@ -16,38 +14,11 @@ import ProductionView from './components/views/ProductionView';
 import AdminView from './components/views/AdminView';
 
 const App: React.FC = () => {
-  const { session, loading: sessionLoading } = useSession();
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const { loading: sessionLoading } = useSession();
+  
+  // ESTADO LOCAL PARA EL ROL (Modo Dev)
+  const [userRole, setUserRole] = useState<UserRole>(UserRole.CLIENT); // Default a Cliente
 
-  // Fetch user profile and role from Supabase
-  const { data: profile, isLoading: profileLoading, error: profileError } = useQuery({
-    queryKey: ['userProfile', session?.user?.id],
-    queryFn: async () => {
-      if (!session?.user?.id) return null;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!session && !sessionLoading,
-    staleTime: Infinity,
-  });
-
-  useEffect(() => {
-    if (profile?.role) {
-      setUserRole(profile.role as UserRole);
-    } else if (!session && !sessionLoading) {
-      setUserRole(null);
-    }
-    if (profileError) {
-      toast.error(`Error al cargar perfil: ${profileError.message}`);
-    }
-  }, [profile, session, sessionLoading, profileError]);
-
-  // New useOrderSystem hook
   const {
     orders,
     isLoading,
@@ -65,7 +36,6 @@ const App: React.FC = () => {
     handleLogout,
   } = useOrderSystem();
 
-  // Local UI State for PawModal
   const [pendingUpload, setPendingUpload] = useState<{
       file: File;
       orderId: string;
@@ -82,17 +52,18 @@ const App: React.FC = () => {
     }
   };
 
-  if (sessionLoading || isLoading || profileLoading) {
+  if (sessionLoading || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-700">
-        Cargando aplicación...
+        Cargando aplicación (Modo Dev)...
       </div>
     );
   }
 
-  if (!session) {
+  // BYPASS LOGIN CHECK
+  /* if (!session) {
     return <LoginPage />;
-  }
+  } */
 
   if (error) {
     return (
@@ -105,8 +76,8 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <RoleSwitcher
-        currentRole={userRole || UserRole.CLIENT}
-        onRoleChange={() => { /* No-op, el rol se determina por Supabase */ }}
+        currentRole={userRole}
+        onRoleChange={setUserRole} // Permitir cambio manual
         onReset={handleLogout}
       />
 
@@ -115,7 +86,7 @@ const App: React.FC = () => {
         {userRole === UserRole.CLIENT && (
             <ClientView
                 orders={orders}
-                isProcessing={isLoading} // Usar isLoading general para deshabilitar UI
+                isProcessing={isLoading}
                 onUpdateSlot={(orderId, itemId, slotId, updates) => updateSlot({ orderId, itemId, slotId, updates })}
                 onUpdateSleeve={(orderId, itemId, config) => updateSleeve({ orderId, itemId, config })}
                 onInitiateUpload={(file, orderId, itemId, slotId) => setPendingUpload({ file, orderId, itemId, slotId })}

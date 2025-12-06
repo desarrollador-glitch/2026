@@ -9,31 +9,52 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
+// MOCK SESSION PARA DESARROLLO
+const MOCK_SESSION: Session = {
+  access_token: 'mock-token',
+  refresh_token: 'mock-refresh-token',
+  expires_in: 3600,
+  token_type: 'bearer',
+  user: {
+    id: 'mock-user-id',
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: 'dev@malcriados.app',
+    email_confirmed_at: new Date().toISOString(),
+    phone: '',
+    confirmed_at: new Date().toISOString(),
+    last_sign_in_at: new Date().toISOString(),
+    app_metadata: { provider: 'email', providers: ['email'] },
+    user_metadata: {},
+    identities: [],
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+};
+
 export const SessionContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  // INICIALIZAMOS CON LA SESIÓN MOCK DIRECTAMENTE
+  const [session, setSession] = useState<Session | null>(MOCK_SESSION);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    // Intentamos obtener sesión real, pero no bloqueamos si falla
+    supabase.auth.getSession().then(({ data: { session: realSession } }) => {
+      if (realSession) {
+          setSession(realSession);
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      if (session) {
+          setSession(session);
+      }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-700">
-        Cargando sesión...
-      </div>
-    );
-  }
 
   return (
     <SessionContext.Provider value={{ session, loading }}>
