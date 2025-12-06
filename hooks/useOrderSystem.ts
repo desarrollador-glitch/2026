@@ -12,7 +12,7 @@ export const useOrderSystem = () => {
   const { session } = useSession();
   const [isProcessingAI, setIsProcessingAI] = useState(false);
 
-  // --- 1. FETCH REAL DATA FROM SUPABASE ---
+  // --- FETCH ORDERS (Mismo código anterior) ---
   const fetchOrders = async (): Promise<Order[]> => {
     try {
         const [ordersRes, itemsRes, slotsRes] = await Promise.all([
@@ -25,11 +25,9 @@ export const useOrderSystem = () => {
         if (itemsRes.error) throw itemsRes.error;
         if (slotsRes.error) throw slotsRes.error;
 
-        // --- MAPEO DE DATOS ---
         const slotsByItem: Record<string, EmbroiderySlot[]> = {};
         slotsRes.data.forEach((s: any) => {
             if (!slotsByItem[s.order_item_id]) slotsByItem[s.order_item_id] = [];
-            
             slotsByItem[s.order_item_id].push({
                 id: s.id,
                 petName: s.pet_name,
@@ -44,7 +42,6 @@ export const useOrderSystem = () => {
         const itemsByOrder: Record<string, OrderItem[]> = {};
         itemsRes.data.forEach((i: any) => {
             if (!itemsByOrder[i.order_id]) itemsByOrder[i.order_id] = [];
-            
             itemsByOrder[i.order_id].push({
                 id: i.id,
                 groupId: i.pack,
@@ -91,8 +88,7 @@ export const useOrderSystem = () => {
     refetchInterval: 5000,
   });
 
-  // --- 2. MUTATIONS ---
-
+  // --- MUTATIONS ---
   const updateSlotMutation = useMutation({
     mutationFn: async ({ orderId, itemId, slotId, updates }: { orderId: string, itemId: string, slotId: string, updates: Partial<EmbroiderySlot> }) => {
         const dbUpdates: any = {};
@@ -116,17 +112,6 @@ export const useOrderSystem = () => {
     onError: (err: any) => toast.error(`Error: ${err.message}`)
   });
 
-  const updateOrderStatusMutation = useMutation({
-    mutationFn: async ({ orderId, newStatus }: { orderId: string, newStatus: OrderStatus }) => {
-        const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-        if (error) throw error;
-    },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Estado actualizado');
-    }
-  });
-
   const handleImageUploadMutation = useMutation({
     mutationFn: async ({ file, orderId, itemId, slotId }: { file: File, orderId: string, itemId: string, slotId: string }) => {
         setIsProcessingAI(true);
@@ -134,9 +119,13 @@ export const useOrderSystem = () => {
             // 1. Upload to Storage
             const path = `orders/${orderId}/${slotId}/${Date.now()}_${file.name}`;
             const publicUrl = await uploadFile(file, path);
-            if (!publicUrl) throw new Error("Error subiendo archivo a Supabase");
+            
+            // VALIDACIÓN CRÍTICA: Si la subida falló, detenemos todo.
+            if (!publicUrl) {
+                throw new Error("No se pudo subir la imagen. Proceso cancelado.");
+            }
 
-            // 2. Convert to Base64
+            // 2. Convert to Base64 for AI Analysis
             const reader = new FileReader();
             const base64Promise = new Promise<string>((resolve) => {
                 reader.onload = (e) => resolve(e.target?.result as string);
@@ -144,8 +133,7 @@ export const useOrderSystem = () => {
             });
             const base64 = await base64Promise;
 
-            // 3. Analyze with Gemini (AHORA SIN CATCH SILENCIOSO)
-            // Si esto falla, el código se detendrá y saltará al bloque catch final (Toast Error)
+            // 3. Analyze with Gemini
             const aiResult = await analyzeImageQuality(base64);
 
             // 4. Update DB
@@ -162,7 +150,7 @@ export const useOrderSystem = () => {
 
             if (error) throw error;
 
-            // 5. Update Order Status
+            // 5. Update Order Status if rejected
             if (!aiResult.approved) {
                  await supabase.from('orders').update({ status: 'ACTION_REQUIRED' }).eq('id', orderId);
             }
@@ -176,69 +164,65 @@ export const useOrderSystem = () => {
         toast.success('Foto procesada y analizada por IA');
     },
     onError: (err: any) => {
-        // AQUÍ VERÁS EL ERROR REAL SI LA IA FALLA
         setIsProcessingAI(false);
         console.error("Upload/AI Error:", err);
-        toast.error(`${err.message}`);
+        // Toast ya mostrado por uploadFile o analyzeImageQuality si es específico, 
+        // pero mostramos uno genérico por si acaso.
+        if (err.message !== "No se pudo subir la imagen. Proceso cancelado.") {
+             toast.error(`${err.message}`);
+        }
     }
   });
 
-  // ... Resto de mutaciones igual ...
+  // Mantenemos el resto de mutaciones sin cambios (para no alargar innecesariamente)
+  // ... (SubmitDesign, ClientReview, etc) ... 
+  // Voy a incluir solo las necesarias para que el archivo compile completo y correcto.
+
+  const updateOrderStatusMutation = useMutation({
+    mutationFn: async ({ orderId, newStatus }: { orderId: string, newStatus: OrderStatus }) => {
+        const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+        if (error) throw error;
+    },
+    onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
+        toast.success('Estado actualizado');
+    }
+  });
+
   const submitDesignMutation = useMutation({
     mutationFn: async ({ orderId, assets }: { orderId: string, assets: { image: string, technicalSheet: string, machineFile: string } }) => {
-        const { error } = await supabase
-            .from('orders')
-            .update({
+        const { error } = await supabase.from('orders').update({
                 design_image: assets.image,
                 technical_sheet: assets.technicalSheet,
                 machine_file: assets.machineFile,
                 status: 'DESIGN_REVIEW',
                 assigned_designer_id: session?.user?.id 
-            })
-            .eq('id', orderId);
+            }).eq('id', orderId);
         if (error) throw error;
     },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Diseño enviado a revisión');
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Diseño enviado a revisión'); }
   });
 
   const handleClientReviewMutation = useMutation({
     mutationFn: async ({ orderId, approved, feedback }: { orderId: string, approved: boolean, feedback?: string }) => {
         const newStatus = approved ? 'READY_TO_EMBROIDER' : 'DESIGN_REJECTED';
-        const { error } = await supabase
-            .from('orders')
-            .update({ status: newStatus, client_feedback: feedback })
-            .eq('id', orderId);
+        const { error } = await supabase.from('orders').update({ status: newStatus, client_feedback: feedback }).eq('id', orderId);
         if (error) throw error;
     },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Respuesta enviada');
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Respuesta enviada'); }
   });
 
   const reportIssueMutation = useMutation({
     mutationFn: async ({ orderId, reason }: { orderId: string, reason: string }) => {
-        const { error } = await supabase
-            .from('orders')
-            .update({ status: 'ON_HOLD', production_issue: reason })
-            .eq('id', orderId);
+        const { error } = await supabase.from('orders').update({ status: 'ON_HOLD', production_issue: reason }).eq('id', orderId);
         if (error) throw error;
     },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.warn('Incidencia reportada');
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.warn('Incidencia reportada'); }
   });
 
   const resolveIssueMutation = useMutation({
     mutationFn: async ({ orderId }: { orderId: string }) => {
-        const { error } = await supabase
-            .from('orders')
-            .update({ status: 'IN_PROGRESS', production_issue: null })
-            .eq('id', orderId);
+        const { error } = await supabase.from('orders').update({ status: 'IN_PROGRESS', production_issue: null }).eq('id', orderId);
         if (error) throw error;
     },
     onSuccess: () => toast.success('Incidencia resuelta')
@@ -252,43 +236,30 @@ export const useOrderSystem = () => {
 
          const updateObj: any = {};
          updateObj[field === 'finishedProductPhoto' ? 'finished_product_photo' : 'packed_product_photo'] = publicUrl;
-
          const { error } = await supabase.from('orders').update(updateObj).eq('id', orderId);
          if (error) throw error;
     },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Evidencia cargada');
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Evidencia cargada'); }
   });
 
   const updateSleeveMutation = useMutation({
       mutationFn: async ({ orderId, itemId, config }: { orderId: string, itemId: string, config: SleeveConfig | undefined }) => {
-        const { error } = await supabase
-            .from('order_items')
-            .update({ sleeve_config: config || null })
-            .eq('id', itemId);
+        const { error } = await supabase.from('order_items').update({ sleeve_config: config || null }).eq('id', itemId);
         if (error) throw error;
       },
-      onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-          toast.success('Manga actualizada');
-      }
+      onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Manga actualizada'); }
   });
 
   const handleEditImageMutation = useMutation<void, Error, { orderId: string; itemId: string; slotId: string; currentImage: string; prompt: string }>({
     mutationFn: async ({ prompt }) => {
       setIsProcessingAI(true);
-      console.log('Editando (Mock)...', prompt);
       await new Promise(resolve => setTimeout(resolve, 2000));
     },
     onSettled: () => setIsProcessingAI(false),
     onSuccess: () => toast.success('Edición simulada (Falta implementar endpoint real)')
   });
 
-  const handleLogout = async () => {
-     toast.success('En modo Dev, recarga la página para reiniciar estado.');
-  };
+  const handleLogout = async () => { toast.success('En modo Dev, recarga la página.'); };
 
   return {
     orders: orders || [],
