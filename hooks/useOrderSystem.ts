@@ -125,6 +125,22 @@ export const useOrderSystem = () => {
                 return; // El toast de error ya se mostró en uploadFile
             }
 
+            // --- PASO CRÍTICO: GUARDAR EN DB INMEDIATAMENTE ---
+            // Esto asegura que la foto aparezca en el frontend aunque la IA falle después.
+            const { error: initialDbError } = await supabase
+                .from('embroidery_slots')
+                .update({
+                    photo_url: publicUrl,
+                    status: 'ANALYZING',
+                    ai_reason: null
+                })
+                .eq('id', slotId);
+
+            if (initialDbError) throw initialDbError;
+
+            // Refrescar UI inmediatamente para que el usuario vea la foto cargando
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+
             // 2. Convert to Base64 for AI Analysis
             const reader = new FileReader();
             const base64Promise = new Promise<string>((resolve) => {
@@ -133,40 +149,58 @@ export const useOrderSystem = () => {
             });
             const base64 = await base64Promise;
 
-            // 3. Analyze with Gemini
-            const aiResult = await analyzeImageQuality(base64);
+            // 3. Analyze with Gemini (En un bloque try/catch aislado)
+            try {
+                const aiResult = await analyzeImageQuality(base64);
 
-            // 4. Update DB
-            const status = aiResult.approved ? 'APPROVED' : 'REJECTED';
-            
-            const { error } = await supabase
-                .from('embroidery_slots')
-                .update({
-                    photo_url: publicUrl,
-                    status: status,
-                    ai_reason: aiResult.reason
-                })
-                .eq('id', slotId);
+                // 4. Update DB with Result (Solo si la IA responde)
+                const status = aiResult.approved ? 'APPROVED' : 'REJECTED';
+                
+                const { error: finalDbError } = await supabase
+                    .from('embroidery_slots')
+                    .update({
+                        status: status,
+                        ai_reason: aiResult.reason
+                    })
+                    .eq('id', slotId);
 
-            if (error) throw error;
+                if (finalDbError) throw finalDbError;
 
-            if (!aiResult.approved) {
-                 await supabase.from('orders').update({ status: 'ACTION_REQUIRED' }).eq('id', orderId);
+                if (!aiResult.approved) {
+                     await supabase.from('orders').update({ status: 'ACTION_REQUIRED' }).eq('id', orderId);
+                }
+                
+                toast.success(aiResult.approved ? 'Foto aprobada por IA' : 'Foto rechazada por IA');
+
+            } catch (aiError: any) {
+                console.error("AI Service Error (Non-blocking):", aiError);
+                
+                // Si la IA falla (ej: API Key inválida), marcamos para revisión manual
+                // NO borramos la fotoUrl
+                await supabase
+                    .from('embroidery_slots')
+                    .update({
+                        status: 'REJECTED', 
+                        ai_reason: "⚠️ IA no disponible. Se requiere revisión manual."
+                    })
+                    .eq('id', slotId);
+                
+                toast.error("Error de conexión con IA. Foto guardada para revisión manual.");
             }
 
+        } catch (err: any) {
+             throw err; // Re-lanzar errores fatales (subida o DB)
         } finally {
             setIsProcessingAI(false);
         }
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['orders'] });
-        // Solo mostramos éxito si realmente se procesó (no si falló el upload y retornó early)
-        if (!isProcessingAI) toast.success('Foto procesada y analizada por IA');
     },
     onError: (err: any) => {
         setIsProcessingAI(false);
-        console.error("Upload/AI Error:", err);
-        toast.error(`${err.message}`);
+        console.error("Upload/DB Fatal Error:", err);
+        toast.error(`Error crítico: ${err.message}`);
     }
   });
 
