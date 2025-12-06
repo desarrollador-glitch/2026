@@ -1,11 +1,11 @@
 import React from 'react';
 import { UserRole } from '../types';
-import { Users, Palette, Scissors, ShieldCheck, RotateCcw } from 'lucide-react';
+import { Users, Palette, Scissors, ShieldCheck, LogOut } from 'lucide-react'; // Cambiado RotateCcw por LogOut
 
 interface RoleSwitcherProps {
   currentRole: UserRole;
-  onRoleChange: (role: UserRole) => void;
-  onReset: () => void;
+  onRoleChange: (role: UserRole) => void; // Mantener por si se necesita para admin, pero será no-op para roles normales
+  onReset: () => void; // Ahora es para cerrar sesión
 }
 
 const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, onReset }) => {
@@ -31,11 +31,12 @@ const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, 
                 return (
                   <button
                     key={role.id}
-                    onClick={() => onRoleChange(role.id)}
+                    // onClick={() => onRoleChange(role.id)} // Deshabilitar cambio de rol manual
+                    disabled={true} // Los botones de rol son solo indicadores
                     className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive 
                         ? 'bg-brand-100 text-brand-900 ring-1 ring-brand-300' 
-                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                        : 'text-gray-500 bg-gray-50 cursor-not-allowed' // Estilo para deshabilitado
                     }`}
                   >
                     <Icon className="w-4 h-4 mr-2" />
@@ -48,18 +49,19 @@ const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, 
           
           <div className="flex items-center gap-4">
             <button 
-                onClick={onReset}
+                onClick={onReset} // Ahora es para cerrar sesión
                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                title="Reiniciar Demo (Borrar datos)"
+                title="Cerrar Sesión"
             >
-                <RotateCcw className="w-5 h-5" />
+                <LogOut className="w-5 h-5" />
             </button>
 
             <div className="md:hidden">
                 <select 
                 value={currentRole}
-                onChange={(e) => onRoleChange(e.target.value as UserRole)}
-                className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm rounded-md"
+                // onChange={(e) => onRoleChange(e.target.value as UserRole)} // Deshabilitar cambio de rol manual
+                disabled={true} // El selector de rol es solo un indicador
+                className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm rounded-md bg-gray-50 text-gray-700"
                 >
                 {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                 </select>
