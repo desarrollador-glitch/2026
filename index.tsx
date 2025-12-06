@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SessionContextProvider } from './components/SessionContextProvider';
+import { SessionContextProvider } from './src/components/SessionContextProvider'; // Ruta corregida
 
 const queryClient = new QueryClient();
 
