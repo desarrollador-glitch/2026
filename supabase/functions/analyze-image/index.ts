@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.12.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,105 +7,93 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // 1. CORS Pre-flight
+  // 1. Manejo de CORS (Pre-flight)
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    console.log("🚀 Edge Function iniciada: analyze-image");
-
-    // 2. Validación de Configuración (CRÍTICO)
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    
-    // Verificación de seguridad sin exponer la clave
-    if (!GEMINI_API_KEY) {
-      console.error("❌ ERROR CRÍTICO: La variable GEMINI_API_KEY no está definida en los Secretos de Supabase.");
+    // 2. Obtener y Validar API Key
+    const apiKey = Deno.env.get('GEMINI_API_KEY')
+    if (!apiKey) {
+      console.error("❌ ERROR: GEMINI_API_KEY no está definida en los secretos de Supabase.")
       return new Response(
-        JSON.stringify({ 
-          error: "Server Error: Configuration missing. GEMINI_API_KEY not found in environment secrets." 
-        }), 
+        JSON.stringify({ error: "Configuration Error: API Key missing in server environment." }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      )
     }
 
-    console.log(`✅ API Key detectada (Longitud: ${GEMINI_API_KEY.length} caracteres)`);
-
-    // 3. Parsing del Request
-    const { image } = await req.json();
+    // 3. Obtener datos del Request
+    const { image } = await req.json()
     if (!image) {
-      throw new Error('No se envió ninguna imagen en el cuerpo de la petición');
+      return new Response(
+        JSON.stringify({ error: "No image data provided." }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    // 4. Preparar llamada a Google
-    const cleanBase64 = image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
-    const model = 'gemini-1.5-flash';
-    
-    // Construcción segura de URL
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    // 4. Limpiar Base64 (remover header data:image/...)
+    // La librería espera el base64 limpio o la parte inline data
+    const base64Data = image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '')
 
-    console.log("📡 Enviando petición a Google Gemini...");
-
-    const requestBody = {
-      contents: [{
-        parts: [
-          {
-            text: `Actúa como un experto en digitalización de bordados. Analiza esta imagen de una mascota.
-            
-            Criterios de Aceptación (Estrictos):
-            1. NITIDEZ: La cara debe estar perfectamente enfocada.
-            2. ILUMINACIÓN: Buen contraste, sin sombras duras en la cara.
-            3. OBSTRUCCIONES: La cara no debe estar tapada.
-            4. RESOLUCIÓN: No pixelada.
-
-            Responde EXCLUSIVAMENTE con este JSON sin markdown:
-            { "approved": boolean, "reason": "Explicación breve en español" }`
-          },
-          {
-            inline_data: {
-              mime_type: "image/jpeg",
-              data: cleanBase64
-            }
-          }
-        ]
-      }],
+    // 5. Inicializar Google AI
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
       generationConfig: {
-        response_mime_type: "application/json"
+        responseMimeType: "application/json" // Forzar respuesta JSON nativa
       }
-    };
+    })
 
-    // 5. Ejecución Fetch
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
+    // 6. Preparar Prompt
+    const prompt = `Actúa como experto en control de calidad de bordados. Analiza la imagen.
+    
+    CRITERIOS DE APROBACIÓN:
+    1. Nitidez: Cara enfocada.
+    2. Iluminación: Sin sombras duras que oculten rasgos.
+    3. Integridad: Ninguna parte de la cara cortada u obstruida.
+    
+    Responde con este esquema JSON:
+    {
+      "approved": boolean, 
+      "reason": "Explicación breve y amigable en español dirigida al cliente."
+    }`
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Google API Error (${response.status}):`, errorText);
-      // Devolvemos el error de Google tal cual para depuración
-      throw new Error(`Google API Error: ${errorText}`);
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: "image/jpeg"
+      }
     }
 
-    const data = await response.json();
-    console.log("✅ Respuesta recibida de Google");
+    console.log("📡 Enviando a Gemini (SDK)...")
 
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) throw new Error('La IA no devolvió texto válido');
+    // 7. Ejecutar Análisis
+    const result = await model.generateContent([prompt, imagePart])
+    const responseText = result.response.text()
+    
+    console.log("✅ Respuesta IA:", responseText)
 
-    const cleanJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedResult = JSON.parse(cleanJson);
+    // 8. Parsear y Devolver
+    // Al usar responseMimeType: "application/json", el texto debería ser JSON válido directamente
+    let parsedResult
+    try {
+        parsedResult = JSON.parse(responseText)
+    } catch (e) {
+        // Fallback por si acaso devuelve markdown
+        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim()
+        parsedResult = JSON.parse(cleanJson)
+    }
 
     return new Response(JSON.stringify(parsedResult), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    })
 
-  } catch (error: any) {
-    console.error("🔥 Excepción General:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500, // Error interno, no de validación de usuario
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  } catch (error) {
+    console.error("🔥 Error en Edge Function:", error)
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal Server Error" }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
   }
 })
