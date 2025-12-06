@@ -69,7 +69,8 @@ export const useOrderSystem = () => {
 
     // Apply RLS filtering based on role (though Supabase RLS policies should handle most of this)
     if (userRole === UserRole.CLIENT) {
-      query = query.eq('email', userEmail);
+      // Filter by client_user_id first, then fallback to email for older orders or if client_user_id is not set by n8n
+      query = query.or(`client_user_id.eq.${userId},email.eq.${userEmail}`);
     }
     // For staff roles, RLS policies are set to allow them to see relevant orders.
     // No explicit filter here, relying on RLS.
@@ -187,7 +188,7 @@ export const useOrderSystem = () => {
         }
 
         if (newStatus !== currentOrder.status || Object.keys(updatesOrder).length > 0) {
-          await supabase.from('orders').update({ status: newStatus, ...updatesOrder }).eq('id', orderId);
+          await supabase.from('orders').update({ status: newStatus, assigned_designer_id: updatesOrder.assignedDesignerId, assigned_embroiderer_id: updatesOrder.assignedEmbroidererId }).eq('id', orderId);
         }
       }
     },
@@ -339,7 +340,13 @@ export const useOrderSystem = () => {
 
       const { error } = await supabase
         .from('orders')
-        .update(updates)
+        .update({
+          status: updates.status,
+          design_image: updates.design_image,
+          technical_sheet: updates.technical_sheet,
+          machine_file: updates.machine_file,
+          client_feedback: updates.client_feedback
+        })
         .eq('id', orderId);
 
       if (error) throw error;
@@ -365,12 +372,16 @@ export const useOrderSystem = () => {
       };
 
       if (approved && !currentOrder.assignedEmbroidererId) {
-        updates.assigned_embroiderer_id = await assignOptimalStaff(UserRole.EMBROIDERER, orders || []);
+        updates.assignedEmbroidererId = await assignOptimalStaff(UserRole.EMBROIDERER, orders || []);
       }
 
       const { error } = await supabase
         .from('orders')
-        .update(updates)
+        .update({
+          status: updates.status,
+          client_feedback: updates.client_feedback,
+          assigned_embroiderer_id: updates.assignedEmbroidererId
+        })
         .eq('id', orderId);
 
       if (error) throw error;
@@ -393,15 +404,19 @@ export const useOrderSystem = () => {
       let updates: Partial<Order> = { status: newStatus };
 
       if (newStatus === OrderStatus.WAITING_FOR_DESIGN && !currentOrder.assignedDesignerId) {
-        updates.assigned_designer_id = await assignOptimalStaff(UserRole.DESIGNER, orders || []);
+        updates.assignedDesignerId = await assignOptimalStaff(UserRole.DESIGNER, orders || []);
       }
       if (newStatus === OrderStatus.READY_TO_EMBROIDER && !currentOrder.assignedEmbroidererId) {
-        updates.assigned_embroiderer_id = await assignOptimalStaff(UserRole.EMBROIDERER, orders || []);
+        updates.assignedEmbroidererId = await assignOptimalStaff(UserRole.EMBROIDERER, orders || []);
       }
 
       const { error } = await supabase
         .from('orders')
-        .update(updates)
+        .update({
+          status: updates.status,
+          assigned_designer_id: updates.assignedDesignerId,
+          assigned_embroiderer_id: updates.assignedEmbroidererId
+        })
         .eq('id', orderId);
 
       if (error) throw error;
