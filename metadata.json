@@ -1,0 +1,5 @@
+{
+  "name": "Malcriados - Embroidery Manager",
+  "description": "Una aplicación integral para gestionar pedidos de bordado de mascotas. Permite a los clientes subir fotos, utiliza Gemini AI para verificar la calidad de la imagen, facilita el flujo de trabajo entre diseñadores y bordadores, y permite la edición y visualización de productos.",
+  "requestFramePermissions": []
+}
