@@ -32,13 +32,16 @@ const ClientView: React.FC<ClientViewProps> = ({
       o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  // HELPER: Detect sleeve item robustly
+  const isSleeveItem = (sku: string) => sku && sku.toLowerCase() === 'extra-manga';
+
   // HELPER: GROUP ITEMS BY GROUP_ID
   const groupItems = (items: OrderItem[]) => {
       const bundles: Record<string, OrderItem[]> = {};
       const singles: OrderItem[] = [];
 
       items.forEach(item => {
-          if (item.sku === 'extra-manga') return; // Skip logic items
+          if (isSleeveItem(item.sku)) return; // Skip logic items (Credits)
           if (item.groupId) {
               if (!bundles[item.groupId]) bundles[item.groupId] = [];
               bundles[item.groupId].push(item);
@@ -268,7 +271,8 @@ const ClientView: React.FC<ClientViewProps> = ({
             ].includes(order.status);
 
             // Sleeve Credits Logic (GLOBAL FOR ORDER)
-            const sleeveItems = order.items.filter(i => i.sku === 'extra-manga');
+            // Use case-insensitive check
+            const sleeveItems = order.items.filter(i => isSleeveItem(i.sku));
             const totalSleeveCredits = sleeveItems.reduce((acc, item) => acc + item.quantity, 0);
             const assignedSleeves = order.items.filter(i => i.sleeve).length;
             const remainingSleeves = totalSleeveCredits - assignedSleeves;
@@ -293,7 +297,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                       <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
                         <span>{new Date(order.orderDate).toLocaleDateString()}</span>
                         <span>•</span>
-                        <span>{order.items.filter(i=>i.sku!=='extra-manga').length} productos</span>
+                        {/* Exclude sleeve items from count visually */}
+                        <span>{order.items.filter(i => !isSleeveItem(i.sku)).length} productos</span>
                       </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -549,7 +554,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
 
                   {/* SLEEVE CONFIGURATION SECTION (Shared Logic) */}
-                  {totalSleeveCredits > 0 && !['TSHIRT', 'CAP'].some(t => item.sku.includes(t.toLowerCase())) && (
+                  {/* Robust case-insensitive check for excluded items */}
+                  {totalSleeveCredits > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
                       <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
                           <div className="flex justify-between items-start mb-4">
                               <div>
