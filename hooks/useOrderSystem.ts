@@ -15,7 +15,6 @@ export const useOrderSystem = () => {
   // --- 1. FETCH REAL DATA FROM SUPABASE ---
   const fetchOrders = async (): Promise<Order[]> => {
     try {
-        // Hacemos 3 peticiones paralelas para eficiencia (en lugar de joins complejos que duplican datos)
         const [ordersRes, itemsRes, slotsRes] = await Promise.all([
             supabase.from('orders').select('*').order('created_at', { ascending: false }),
             supabase.from('order_items').select('*'),
@@ -26,9 +25,7 @@ export const useOrderSystem = () => {
         if (itemsRes.error) throw itemsRes.error;
         if (slotsRes.error) throw slotsRes.error;
 
-        // --- MAPEO DE DATOS (DB snake_case -> Frontend camelCase) ---
-        
-        // 1. Agrupar Slots por Item ID
+        // --- MAPEO DE DATOS ---
         const slotsByItem: Record<string, EmbroiderySlot[]> = {};
         slotsRes.data.forEach((s: any) => {
             if (!slotsByItem[s.order_item_id]) slotsByItem[s.order_item_id] = [];
@@ -44,24 +41,22 @@ export const useOrderSystem = () => {
             });
         });
 
-        // 2. Agrupar Items por Order ID
         const itemsByOrder: Record<string, OrderItem[]> = {};
         itemsRes.data.forEach((i: any) => {
             if (!itemsByOrder[i.order_id]) itemsByOrder[i.order_id] = [];
             
             itemsByOrder[i.order_id].push({
                 id: i.id,
-                groupId: i.pack, // DB: pack -> Frontend: groupId
+                groupId: i.pack,
                 sku: i.sku,
                 productName: i.product_name,
                 quantity: i.quantity,
                 price: i.unit_price,
-                sleeve: i.sleeve_config as SleeveConfig, // JSONB Cast
-                customizations: slotsByItem[i.id] || [] // Adjuntar slots hijos
+                sleeve: i.sleeve_config as SleeveConfig,
+                customizations: slotsByItem[i.id] || []
             });
         });
 
-        // 3. Construir Órdenes Finales
         const mappedOrders: Order[] = ordersRes.data.map((o: any) => ({
             id: o.id,
             customerName: o.customer_name,
@@ -71,23 +66,15 @@ export const useOrderSystem = () => {
             orderDate: o.order_date || o.created_at,
             status: o.status as OrderStatus,
             totalAmount: o.total_amount,
-            
-            // Staff
             assignedDesignerId: o.assigned_designer_id,
             assignedEmbroidererId: o.assigned_embroiderer_id,
-
-            // Design Assets
             designImage: o.design_image,
             technicalSheet: o.technical_sheet,
             machineFile: o.machine_file,
             clientFeedback: o.client_feedback,
-
-            // Production Evidence
             productionIssue: o.production_issue,
             finishedProductPhoto: o.finished_product_photo,
             packedProductPhoto: o.packed_product_photo,
-
-            // Items anidados
             items: itemsByOrder[o.id] || []
         }));
 
@@ -101,21 +88,19 @@ export const useOrderSystem = () => {
   const { data: orders, isLoading, error } = useQuery<Order[], Error>({
     queryKey: ['orders', 'real-data'],
     queryFn: fetchOrders,
-    refetchInterval: 5000, // Polling cada 5s para ver cambios en tiempo real
+    refetchInterval: 5000,
   });
 
-  // --- 2. MUTATIONS (REAL WRITES) ---
+  // --- 2. MUTATIONS ---
 
-  // Actualizar Slot (Foto, Posición, etc)
   const updateSlotMutation = useMutation({
     mutationFn: async ({ orderId, itemId, slotId, updates }: { orderId: string, itemId: string, slotId: string, updates: Partial<EmbroiderySlot> }) => {
-        // Mapear updates al formato DB
         const dbUpdates: any = {};
         if (updates.petName !== undefined) dbUpdates.pet_name = updates.petName;
         if (updates.position !== undefined) dbUpdates.position = updates.position;
         if (updates.includeHalo !== undefined) dbUpdates.include_halo = updates.includeHalo;
         if (updates.status !== undefined) dbUpdates.status = updates.status;
-        if (updates.photoUrl !== undefined) dbUpdates.photo_url = updates.photoUrl; // Nota: Normalmente viene de storage
+        if (updates.photoUrl !== undefined) dbUpdates.photo_url = updates.photoUrl;
 
         const { error } = await supabase
             .from('embroidery_slots')
@@ -131,13 +116,9 @@ export const useOrderSystem = () => {
     onError: (err: any) => toast.error(`Error: ${err.message}`)
   });
 
-  // Actualizar Estado de Orden
   const updateOrderStatusMutation = useMutation({
     mutationFn: async ({ orderId, newStatus }: { orderId: string, newStatus: OrderStatus }) => {
-        const { error } = await supabase
-            .from('orders')
-            .update({ status: newStatus })
-            .eq('id', orderId);
+        const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
         if (error) throw error;
     },
     onSuccess: () => {
@@ -146,18 +127,16 @@ export const useOrderSystem = () => {
     }
   });
 
-  // Subir Foto (Desde Client View)
   const handleImageUploadMutation = useMutation({
     mutationFn: async ({ file, orderId, itemId, slotId }: { file: File, orderId: string, itemId: string, slotId: string }) => {
         setIsProcessingAI(true);
         try {
-            // 1. Upload to Supabase Storage
+            // 1. Upload to Storage
             const path = `orders/${orderId}/${slotId}/${Date.now()}_${file.name}`;
             const publicUrl = await uploadFile(file, path);
-            
-            if (!publicUrl) throw new Error("Error subiendo archivo");
+            if (!publicUrl) throw new Error("Error subiendo archivo a Supabase");
 
-            // 2. Convert File to Base64 for AI Analysis
+            // 2. Convert to Base64
             const reader = new FileReader();
             const base64Promise = new Promise<string>((resolve) => {
                 reader.onload = (e) => resolve(e.target?.result as string);
@@ -165,19 +144,13 @@ export const useOrderSystem = () => {
             });
             const base64 = await base64Promise;
 
-            // 3. Analyze with Gemini AI
-            let aiResult = { approved: true, reason: 'Foto aprobada manualmente (AI Error)' };
-            try {
-               const analysis = await analyzeImageQuality(base64);
-               aiResult = analysis;
-            } catch (e) {
-               console.warn("AI Analysis failed, skipping check", e);
-            }
+            // 3. Analyze with Gemini (AHORA SIN CATCH SILENCIOSO)
+            // Si esto falla, el código se detendrá y saltará al bloque catch final (Toast Error)
+            const aiResult = await analyzeImageQuality(base64);
 
             // 4. Update DB
             const status = aiResult.approved ? 'APPROVED' : 'REJECTED';
             
-            // Trigger SQL will sync this to other slots in the pack automatically!
             const { error } = await supabase
                 .from('embroidery_slots')
                 .update({
@@ -189,10 +162,8 @@ export const useOrderSystem = () => {
 
             if (error) throw error;
 
-            // 5. Update Order Status if needed
-            if (aiResult.approved) {
-                 // Check logic could go here, or handled by DB triggers
-            } else {
+            // 5. Update Order Status
+            if (!aiResult.approved) {
                  await supabase.from('orders').update({ status: 'ACTION_REQUIRED' }).eq('id', orderId);
             }
 
@@ -202,33 +173,29 @@ export const useOrderSystem = () => {
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Foto procesada correctamente');
+        toast.success('Foto procesada y analizada por IA');
     },
     onError: (err: any) => {
+        // AQUÍ VERÁS EL ERROR REAL SI LA IA FALLA
         setIsProcessingAI(false);
-        toast.error(err.message);
+        console.error("Upload/AI Error:", err);
+        toast.error(`${err.message}`);
     }
   });
 
-  // Enviar Diseño (Designer View)
+  // ... Resto de mutaciones igual ...
   const submitDesignMutation = useMutation({
     mutationFn: async ({ orderId, assets }: { orderId: string, assets: { image: string, technicalSheet: string, machineFile: string } }) => {
-        // En un caso real, 'assets' vendrían como Base64 y deberíamos subirlos a Storage
-        // Por simplicidad en dev, asumimos que ya son URLs o Base64 que guardamos directo (aunque no recomendado para prod)
-        // Para hacerlo bien: Subir a storage y obtener URL.
-        
-        // TODO: Implementar subida real de assets. Por ahora guardamos el string (URL o B64)
         const { error } = await supabase
             .from('orders')
             .update({
-                design_image: assets.image, // Debería ser URL
-                technical_sheet: assets.technicalSheet, // Debería ser URL
-                machine_file: assets.machineFile, // Debería ser URL
+                design_image: assets.image,
+                technical_sheet: assets.technicalSheet,
+                machine_file: assets.machineFile,
                 status: 'DESIGN_REVIEW',
-                assigned_designer_id: session?.user?.id // Auto-asignar
+                assigned_designer_id: session?.user?.id 
             })
             .eq('id', orderId);
-
         if (error) throw error;
     },
     onSuccess: () => {
@@ -237,18 +204,13 @@ export const useOrderSystem = () => {
     }
   });
 
-  // Revisión Cliente
   const handleClientReviewMutation = useMutation({
     mutationFn: async ({ orderId, approved, feedback }: { orderId: string, approved: boolean, feedback?: string }) => {
         const newStatus = approved ? 'READY_TO_EMBROIDER' : 'DESIGN_REJECTED';
         const { error } = await supabase
             .from('orders')
-            .update({
-                status: newStatus,
-                client_feedback: feedback
-            })
+            .update({ status: newStatus, client_feedback: feedback })
             .eq('id', orderId);
-        
         if (error) throw error;
     },
     onSuccess: () => {
@@ -257,15 +219,11 @@ export const useOrderSystem = () => {
     }
   });
 
-  // Reportar Incidencia
   const reportIssueMutation = useMutation({
     mutationFn: async ({ orderId, reason }: { orderId: string, reason: string }) => {
         const { error } = await supabase
             .from('orders')
-            .update({
-                status: 'ON_HOLD',
-                production_issue: reason
-            })
+            .update({ status: 'ON_HOLD', production_issue: reason })
             .eq('id', orderId);
         if (error) throw error;
     },
@@ -275,23 +233,17 @@ export const useOrderSystem = () => {
     }
   });
 
-  // Resolver Incidencia
   const resolveIssueMutation = useMutation({
     mutationFn: async ({ orderId }: { orderId: string }) => {
-        // Asumimos que vuelve a "En Progreso"
         const { error } = await supabase
             .from('orders')
-            .update({
-                status: 'IN_PROGRESS',
-                production_issue: null
-            })
+            .update({ status: 'IN_PROGRESS', production_issue: null })
             .eq('id', orderId);
         if (error) throw error;
     },
     onSuccess: () => toast.success('Incidencia resuelta')
   });
 
-  // Subir Evidencia (Producción)
   const handleEvidenceUploadMutation = useMutation({
     mutationFn: async ({ file, orderId, field }: { file: File, orderId: string, field: 'finishedProductPhoto' | 'packedProductPhoto' }) => {
          const path = `evidence/${orderId}/${field}_${Date.now()}`;
@@ -310,14 +262,12 @@ export const useOrderSystem = () => {
     }
   });
 
-  // Actualizar Manga
   const updateSleeveMutation = useMutation({
       mutationFn: async ({ orderId, itemId, config }: { orderId: string, itemId: string, config: SleeveConfig | undefined }) => {
         const { error } = await supabase
             .from('order_items')
-            .update({ sleeve_config: config || null }) // null para borrar
+            .update({ sleeve_config: config || null })
             .eq('id', itemId);
-        
         if (error) throw error;
       },
       onSuccess: () => {
@@ -326,7 +276,6 @@ export const useOrderSystem = () => {
       }
   });
 
-  // MOCK EDIT (Ya que requiere otra llamada a AI y storage)
   const handleEditImageMutation = useMutation<void, Error, { orderId: string; itemId: string; slotId: string; currentImage: string; prompt: string }>({
     mutationFn: async ({ prompt }) => {
       setIsProcessingAI(true);

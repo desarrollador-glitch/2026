@@ -2,10 +2,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 // Helper to ensure we have an API key context
 const getAIClient = async () => {
-  // Check if we need to prompt for a key for High Quality models.
-  // The App component handles the UI trigger for window.aistudio.openSelectKey(),
-  // but we ensure the client is fresh.
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Intentamos leer la key de varias fuentes posibles en Vite
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    console.error("❌ FALTA API KEY: No se encontró VITE_GEMINI_API_KEY ni process.env.API_KEY");
+    throw new Error("Configuración IA incompleta: Falta la API Key.");
+  }
+
+  return new GoogleGenAI({ apiKey });
 };
 
 // 1. Analyze Image Quality (Flash)
@@ -57,16 +62,16 @@ export const analyzeImageQuality = async (base64Image: string): Promise<{ approv
 
     const text = response.text;
     if (!text) {
-      throw new Error("No response text from AI");
+      throw new Error("La IA no devolvió texto.");
     }
 
     // Clean markdown code blocks just in case the model returns them
     const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanText);
 
-  } catch (error) {
-    console.error("Analysis Error:", error);
-    return { approved: false, reason: "Error al conectar con la IA. Intente nuevamente." };
+  } catch (error: any) {
+    console.error("Analysis Error Details:", error);
+    throw new Error(`Fallo en IA: ${error.message || 'Error desconocido'}`);
   }
 };
 
@@ -91,7 +96,6 @@ export const editImageWithPrompt = async (base64Image: string, prompt: string): 
           },
         ],
       },
-      // Note: responseMimeType/responseSchema are NOT supported for nano banana
     });
 
     // Parse output for image
@@ -103,9 +107,9 @@ export const editImageWithPrompt = async (base64Image: string, prompt: string): 
       }
     }
     
-    throw new Error("No image generated.");
-  } catch (error) {
+    throw new Error("No se generó ninguna imagen.");
+  } catch (error: any) {
     console.error("Edit Error:", error);
-    throw error;
+    throw new Error(`Fallo en Edición IA: ${error.message}`);
   }
 };
