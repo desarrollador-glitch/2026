@@ -12,7 +12,7 @@ export const useOrderSystem = () => {
   const { session } = useSession();
   const [isProcessingAI, setIsProcessingAI] = useState(false);
 
-  // --- FETCH ORDERS (Mismo código anterior) ---
+  // --- FETCH ORDERS ---
   const fetchOrders = async (): Promise<Order[]> => {
     try {
         const [ordersRes, itemsRes, slotsRes] = await Promise.all([
@@ -120,9 +120,9 @@ export const useOrderSystem = () => {
             const path = `orders/${orderId}/${slotId}/${Date.now()}_${file.name}`;
             const publicUrl = await uploadFile(file, path);
             
-            // VALIDACIÓN CRÍTICA: Si la subida falló, detenemos todo.
+            // VALIDACIÓN CRÍTICA: Detener si la subida falló (publicUrl es null)
             if (!publicUrl) {
-                throw new Error("No se pudo subir la imagen. Proceso cancelado.");
+                return; // El toast de error ya se mostró en uploadFile
             }
 
             // 2. Convert to Base64 for AI Analysis
@@ -150,7 +150,6 @@ export const useOrderSystem = () => {
 
             if (error) throw error;
 
-            // 5. Update Order Status if rejected
             if (!aiResult.approved) {
                  await supabase.from('orders').update({ status: 'ACTION_REQUIRED' }).eq('id', orderId);
             }
@@ -161,22 +160,15 @@ export const useOrderSystem = () => {
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Foto procesada y analizada por IA');
+        // Solo mostramos éxito si realmente se procesó (no si falló el upload y retornó early)
+        if (!isProcessingAI) toast.success('Foto procesada y analizada por IA');
     },
     onError: (err: any) => {
         setIsProcessingAI(false);
         console.error("Upload/AI Error:", err);
-        // Toast ya mostrado por uploadFile o analyzeImageQuality si es específico, 
-        // pero mostramos uno genérico por si acaso.
-        if (err.message !== "No se pudo subir la imagen. Proceso cancelado.") {
-             toast.error(`${err.message}`);
-        }
+        toast.error(`${err.message}`);
     }
   });
-
-  // Mantenemos el resto de mutaciones sin cambios (para no alargar innecesariamente)
-  // ... (SubmitDesign, ClientReview, etc) ... 
-  // Voy a incluir solo las necesarias para que el archivo compile completo y correcto.
 
   const updateOrderStatusMutation = useMutation({
     mutationFn: async ({ orderId, newStatus }: { orderId: string, newStatus: OrderStatus }) => {

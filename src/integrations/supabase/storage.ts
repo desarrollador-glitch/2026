@@ -17,18 +17,16 @@ export const uploadFile = async (file: File, path: string): Promise<string | nul
     if (error) {
       console.error("❌ Error Supabase Storage:", error);
       
-      // Manejo específico de errores comunes
       if (error.message.includes("row-level security")) {
-        throw new Error("Permiso denegado. Revisa las políticas RLS del Bucket.");
+        throw new Error("Permiso denegado (RLS). El bucket no permite escrituras públicas.");
       }
       if (error.message.includes("The resource was not found")) {
-         throw new Error(`El bucket '${BUCKET_NAME}' no existe.`);
+         throw new Error(`El bucket '${BUCKET_NAME}' no existe en Supabase.`);
       }
 
       throw error;
     }
 
-    // Obtener la URL pública del archivo
     const { data: publicUrlData } = supabase.storage
       .from(BUCKET_NAME)
       .getPublicUrl(data.path);
@@ -38,13 +36,11 @@ export const uploadFile = async (file: File, path: string): Promise<string | nul
 
   } catch (error: any) {
     console.error('Error detallado en uploadFile:', error);
-    toast.error(`Error al subir archivo: ${error.message}`);
-    // Retornamos null para que el flujo se detenga aquí y no intente llamar a la IA
+    toast.error(`Error subida: ${error.message}`);
     return null; 
   }
 };
 
-// ... (El resto de funciones como uploadBase64 se mantienen, o puedes reusar uploadFile)
 export const uploadBase64 = async (base64: string, path: string, mimeType: string): Promise<string | null> => {
   try {
     const byteCharacters = atob(base64.split(',')[1]);
@@ -58,8 +54,7 @@ export const uploadBase64 = async (base64: string, path: string, mimeType: strin
 
     return await uploadFile(file, path);
   } catch (error: any) {
-    console.error('Error al preparar base64:', error.message);
-    toast.error(`Error imagen: ${error.message}`);
+    console.error('Error preparing base64:', error);
     return null;
   }
 };
