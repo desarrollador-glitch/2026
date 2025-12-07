@@ -38,8 +38,6 @@ const ClientView: React.FC<ClientViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const [editPrompt, setEditPrompt] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // --- LOCAL STATE BUFFER (The solution to the lag issue) ---
@@ -49,16 +47,42 @@ const ClientView: React.FC<ClientViewProps> = ({
 
   const hasUnsavedChanges = Object.keys(pendingSlotChanges).length > 0 || Object.keys(pendingSleeveChanges).length > 0;
 
-  // --- HELPERS FOR LOCAL STATE ---
-  const handleLocalSlotChange = (orderId: string, itemId: string, slotId: string, change: Partial<EmbroiderySlot>) => {
-      setPendingSlotChanges(prev => ({
-          ...prev,
-          [slotId]: {
-              orderId,
-              itemId,
-              changes: { ...(prev[slotId]?.changes || {}), ...change }
-          }
-      }));
+  // --- FILTERING ---
+  const filteredOrders = orders.filter(o => 
+      o.id.includes(searchTerm) || 
+      o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  // --- HELPERS FOR LOCAL STATE & SYNC ---
+  
+  // Helper to find all sibling slots in a bundle to update them visually in sync
+  const handleLocalSlotChange = (order: Order, item: OrderItem, slotId: string, slotIndex: number, change: Partial<EmbroiderySlot>) => {
+      const newPending = { ...pendingSlotChanges };
+
+      // 1. Update the target slot
+      newPending[slotId] = {
+          orderId: order.id,
+          itemId: item.id,
+          changes: { ...(newPending[slotId]?.changes || {}), ...change }
+      };
+
+      // 2. MAGIC SYNC: If item is part of a pack, update siblings locally too so user sees it instant
+      if (item.groupId) {
+          const siblings = order.items.filter(i => i.groupId === item.groupId && i.id !== item.id);
+          siblings.forEach(sibling => {
+             const siblingSlot = sibling.customizations[slotIndex];
+             if (siblingSlot) {
+                 newPending[siblingSlot.id] = {
+                     orderId: order.id,
+                     itemId: sibling.id,
+                     changes: { ...(newPending[siblingSlot.id]?.changes || {}), ...change }
+                 };
+             }
+          });
+      }
+
+      setPendingSlotChanges(newPending);
   };
 
   const handleLocalSleeveChange = (orderId: string, itemId: string, config: SleeveConfig | undefined) => {
@@ -102,13 +126,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       }
   };
 
-  // --- FILTERING ---
-  const filteredOrders = orders.filter(o => 
-      o.id.includes(searchTerm) || 
-      o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
   // HELPER: Detect sleeve item robustly
   const isSleeveItem = (item: OrderItem) => {
       if (item.customizationType === 'TEXT_ONLY') return true;
@@ -130,6 +147,32 @@ const ClientView: React.FC<ClientViewProps> = ({
           }
       });
       return { bundles, singles };
+  };
+
+  // HELPER: Calculate Real-Time Credits (DB + Pending)
+  const calculateSleeveStats = (order: Order) => {
+      const totalSleeveCredits = order.items.filter(i => isSleeveItem(i)).reduce((acc, item) => acc + item.quantity, 0);
+      
+      // Count sleeves assigned in DB, adjusted by pending changes
+      let assignedCount = 0;
+      order.items.forEach(item => {
+          if (isSleeveItem(item)) return;
+          
+          const pending = pendingSleeveChanges[item.id];
+          if (pending !== undefined) {
+              // If there is a pending change, use that state (if config exists, it counts)
+              if (pending.config) assignedCount++;
+          } else {
+              // Fallback to DB
+              if (item.sleeve) assignedCount++;
+          }
+      });
+
+      return {
+          total: totalSleeveCredits,
+          assigned: assignedCount,
+          remaining: totalSleeveCredits - assignedCount
+      };
   };
 
   // SUB-COMPONENT: PET CARD
@@ -159,7 +202,7 @@ const ClientView: React.FC<ClientViewProps> = ({
       <div key={slot.id} className={`border rounded-2xl p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isModified ? 'ring-2 ring-blue-400 border-blue-400' : ''}`}>
          
          {isModified && (
-             <div className="absolute -top-3 -right-2 bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm z-20">
+             <div className="absolute -top-3 -right-2 bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm z-20 animate-in zoom-in">
                  Modificado
              </div>
          )}
@@ -201,7 +244,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                             onChange={(e) => {
                                 if (e.target.files?.[0]) {
                                     if(hasUnsavedChanges) {
-                                        alert("Por favor guarda tus cambios de texto antes de subir una foto.");
+                                        toast.error("Por favor guarda tus cambios de texto antes de subir una foto.");
                                         return;
                                     }
                                     onInitiateUpload(e.target.files[0], order.id, item.id, slot.id);
@@ -242,7 +285,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                     className={`w-full text-sm border-gray-200 rounded-lg py-2.5 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
                     value={displayValues.petName || ''}
                     // HERE IS THE FIX: Update local state instead of calling API immediately
-                    onChange={(e) => handleLocalSlotChange(order.id, item.id, slot.id, { petName: e.target.value })}
+                    onChange={(e) => handleLocalSlotChange(order, item, slot.id, index, { petName: e.target.value })}
                   />
                </div>
                )}
@@ -257,7 +300,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                         sku={item.sku}
                         selected={displayValues.position} 
                         // HERE IS THE FIX: Update local state
-                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order.id, item.id, slot.id, { position: pos })}
+                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order, item, slot.id, index, { position: pos })}
                         slotCount={item.customizations.length}
                         readOnly={isLocked}
                   />
@@ -271,7 +314,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                         <span className="text-xs font-bold">{displayValues.includeHalo ? 'Con Aureola 😇' : 'Sin Aureola'}</span>
                       </div>
                   ) : (
-                      <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100 w-full cursor-pointer hover:bg-gray-100" onClick={() => handleLocalSlotChange(order.id, item.id, slot.id, { includeHalo: !displayValues.includeHalo })}>
+                      <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100 w-full cursor-pointer hover:bg-gray-100" onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: !displayValues.includeHalo })}>
                           <button 
                             // Using div onClick parent instead for better hit area
                             className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${displayValues.includeHalo ? 'bg-brand-500 border-brand-600 text-white shadow-sm' : 'bg-white border-gray-300'}`}
@@ -318,16 +361,12 @@ const ClientView: React.FC<ClientViewProps> = ({
                 OrderStatus.DESIGN_REJECTED
             ].includes(order.status);
 
-            const sleeveItems = order.items.filter(i => isSleeveItem(i));
-            const totalSleeveCredits = sleeveItems.reduce((acc, item) => acc + item.quantity, 0);
-            const assignedSleeves = order.items.filter(i => i.sleeve).length;
-            const remainingSleeves = totalSleeveCredits - assignedSleeves;
-
             const { bundles, singles } = groupItems(order.items);
+            const sleeveStats = calculateSleeveStats(order);
 
             // Check if order is complete to allow sending
             const isOrderComplete = order.items.every(item => 
-                item.sku === 'extra-manga' || 
+                isSleeveItem(item) || 
                 item.customizations.every(slot => slot.status === 'APPROVED' || slot.status === 'ANALYZING' || (slot.photoUrl)) 
                 // We check photoUrl because status might still be EMPTY locally before AI runs
             );
@@ -378,7 +417,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                             className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all ${isReadyToSend ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md hover:scale-105 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                          >
                             <Send className="w-3 h-3" />
-                            {isReadyToSend ? 'Finalizar y Enviar a Diseño' : 'Completa las fotos para enviar'}
+                            {isReadyToSend ? 'Finalizar y Enviar a Diseño' : 'Completa fotos para enviar'}
                          </button>
                      )}
                   </div>
@@ -499,7 +538,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                                                   <GarmentVisualizer 
                                                         productName={siblingItem.productName} sku={siblingItem.sku} readOnly={isLocked}
                                                         selected={siblingDisplayPos} 
-                                                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order.id, siblingItem.id, siblingSlot.id, { position: pos })}
+                                                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order, siblingItem, siblingSlot.id, idx, { position: pos })}
                                                   />
                                               </div>
                                               );
@@ -511,9 +550,10 @@ const ClientView: React.FC<ClientViewProps> = ({
                       </div>
 
                       {/* SLEEVE SECTION FOR BUNDLES */}
-                      {totalSleeveCredits > 0 && items.some(i => !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => i.sku.toLowerCase().includes(t.toLowerCase()))) && (
+                      {sleeveStats.total > 0 && items.some(i => !isSleeveItem(i) && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => i.sku.toLowerCase().includes(t.toLowerCase()))) && (
                         <div className="mt-8 pt-8 border-t border-brand-100">
                              <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4"><Tag className="w-4 h-4 text-brand-500"/> Configuración de Mangas (Pack)</h4>
+                             <p className="text-xs text-gray-500 mb-4">Créditos disponibles: <strong>{sleeveStats.remaining}</strong> de {sleeveStats.total}</p>
                              <div className="grid md:grid-cols-2 gap-4">
                                 {items.map(item => {
                                     if (['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase()))) return null;
@@ -528,8 +568,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                                             <div className="flex justify-between items-start mb-3">
                                                 <p className="text-xs font-bold text-gray-700">{item.productName}</p>
                                                 {!displaySleeve && !isLocked && (
-                                                    <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={remainingSleeves === 0} className="text-[10px] bg-gray-50 border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50">
-                                                        {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} Agregar
+                                                    <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={sleeveStats.remaining <= 0} className="text-[10px] bg-gray-50 border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50">
+                                                        {sleeveStats.remaining > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} Agregar
                                                     </button>
                                                 )}
                                                 {displaySleeve && !isLocked && (
@@ -570,10 +610,13 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
 
                   {/* SLEEVE FOR SINGLES */}
-                  {totalSleeveCredits > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
+                  {sleeveStats.total > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
                       <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
                           <div className="flex justify-between items-start mb-4">
-                              <div><h5 className="font-bold text-gray-900 flex items-center gap-2"><Tag className="w-4 h-4 text-brand-500"/> Bordado en Manga (Extra)</h5></div>
+                              <div>
+                                  <h5 className="font-bold text-gray-900 flex items-center gap-2"><Tag className="w-4 h-4 text-brand-500"/> Bordado en Manga (Extra)</h5>
+                                  <p className="text-xs text-gray-500 mt-1">Créditos disponibles: <strong>{sleeveStats.remaining}</strong> de {sleeveStats.total}</p>
+                              </div>
                               
                               {/* Using local state logic here too */}
                               {(() => {
@@ -581,8 +624,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                                   const displaySleeve = pendingSleeve !== undefined ? pendingSleeve : item.sleeve;
                                   
                                   if (!displaySleeve && !isLocked) return (
-                                      <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={remainingSleeves === 0} className="text-xs bg-white border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
-                                          {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} {remainingSleeves > 0 ? 'Agregar Manga' : 'Sin créditos'}
+                                      <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={sleeveStats.remaining <= 0} className="text-xs bg-white border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                                          {sleeveStats.remaining > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} {sleeveStats.remaining > 0 ? 'Agregar Manga' : 'Sin créditos'}
                                       </button>
                                   );
                                   if (displaySleeve && !isLocked) return (
@@ -614,9 +657,9 @@ const ClientView: React.FC<ClientViewProps> = ({
 
       {/* --- UNSAVED CHANGES FLOATING BAR --- */}
       {hasUnsavedChanges && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-6 fade-in duration-300">
-              <div className="bg-gray-900 text-white p-2 pl-4 pr-2 rounded-2xl shadow-2xl flex items-center gap-4 border border-gray-700">
-                  <div className="flex flex-col">
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-6 fade-in duration-300 w-full px-4 max-w-md">
+              <div className="bg-gray-900 text-white p-3 rounded-2xl shadow-2xl flex items-center justify-between border border-gray-700 ring-2 ring-white/20">
+                  <div className="flex flex-col pl-2">
                       <span className="text-sm font-bold flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4 text-yellow-400" />
                           Cambios sin guardar
