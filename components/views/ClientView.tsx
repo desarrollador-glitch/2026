@@ -564,6 +564,61 @@ const ClientView: React.FC<ClientViewProps> = ({
                               </div>
                           ))}
                       </div>
+
+                      {/* SLEEVE SECTION FOR BUNDLES (NEW) */}
+                      {totalSleeveCredits > 0 && items.some(i => !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => i.sku.toLowerCase().includes(t.toLowerCase()))) && (
+                        <div className="mt-8 pt-8 border-t border-brand-100">
+                             <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
+                                <Tag className="w-4 h-4 text-brand-500"/> Configuración de Mangas (Pack)
+                             </h4>
+                             <div className="grid md:grid-cols-2 gap-4">
+                                {items.map(item => {
+                                    // Filter out items that don't support sleeves (e.g. Caps)
+                                    if (['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase()))) return null;
+
+                                    return (
+                                        <div key={item.id} className="bg-white rounded-xl p-4 border border-gray-200">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <p className="text-xs font-bold text-gray-700">{item.productName}</p>
+                                                
+                                                {!item.sleeve && !isLocked && (
+                                                    <button
+                                                        onClick={() => onUpdateSleeve?.(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })}
+                                                        disabled={remainingSleeves === 0}
+                                                        className="text-[10px] bg-gray-50 border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50"
+                                                    >
+                                                        {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>}
+                                                        Agregar
+                                                    </button>
+                                                )}
+                                                
+                                                {item.sleeve && !isLocked && (
+                                                    <button
+                                                        onClick={() => onUpdateSleeve?.(order.id, item.id, undefined)}
+                                                        className="text-[10px] bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 font-bold px-2 py-1 rounded flex items-center gap-1"
+                                                    >
+                                                        <Minus className="w-3 h-3"/> Quitar
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {item.sleeve ? (
+                                                <SleeveDesigner 
+                                                    config={item.sleeve} 
+                                                    readOnly={isLocked}
+                                                    onChange={(newConfig) => onUpdateSleeve?.(order.id, item.id, newConfig)} 
+                                                />
+                                            ) : (
+                                                <div className="text-center py-4 border border-dashed border-gray-200 rounded-lg bg-gray-50">
+                                                    <p className="text-[10px] text-gray-400">Sin manga asignada</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                             </div>
+                        </div>
+                      )}
                   </div>
               ))}
 
