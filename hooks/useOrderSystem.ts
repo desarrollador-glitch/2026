@@ -237,12 +237,17 @@ export const useOrderSystem = () => {
         if (!machineUrl) throw new Error("Error al subir el archivo de máquina.");
 
         // 4. Update Database
+        // CORRECCIÓN: Si estamos en modo Dev con el usuario Mock, enviamos NULL
+        const MOCK_USER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+        const currentUserId = session?.user?.id;
+        const designerIdToSave = (currentUserId === MOCK_USER_ID) ? null : currentUserId;
+
         const { error } = await supabase.from('orders').update({
                 design_image: imageUrl,
                 technical_sheet: techUrl,
                 machine_file: machineUrl,
                 status: 'DESIGN_REVIEW',
-                assigned_designer_id: session?.user?.id 
+                assigned_designer_id: designerIdToSave
             }).eq('id', orderId);
         
         if (error) throw error;
