@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Order, OrderStatus, SleeveConfig, OrderItem, EmbroiderySlot } from '../../types';
 import { QUICK_EDITS } from '../../constants';
 import StatusBadge from '../StatusBadge';
 import OrderProgress from '../OrderProgress';
 import GarmentVisualizer from '../GarmentVisualizer';
 import SleeveDesigner from '../SleeveDesigner';
-import { Search, Lock, Palette, Sparkles, CheckCircle, XCircle, Wand2, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Truck, ArrowRight, Layers, Link } from 'lucide-react';
+import { Search, Lock, Palette, Sparkles, CheckCircle, XCircle, Wand2, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Truck, ArrowRight, Layers, Link, Save, RotateCcw, PartyPopper } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface ClientViewProps {
   orders: Order[];
@@ -15,38 +16,112 @@ interface ClientViewProps {
   onReviewDesign: (orderId: string, approved: boolean, feedback?: string) => void;
   isProcessing: boolean;
   onUpdateSleeve?: (orderId: string, itemId: string, config: SleeveConfig | undefined) => void;
+  onFinalizeOrder: (orderId: string) => void;
+}
+
+// Helper Types for Local State
+type PendingSlotChange = {
+    orderId: string;
+    itemId: string;
+    changes: Partial<EmbroiderySlot>;
+}
+
+type PendingSleeveChange = {
+    orderId: string;
+    itemId: string;
+    config: SleeveConfig | undefined;
 }
 
 const ClientView: React.FC<ClientViewProps> = ({ 
-  orders, onUpdateSlot, onInitiateUpload, onEditImage, onReviewDesign, isProcessing, onUpdateSleeve 
+  orders, onUpdateSlot, onInitiateUpload, onEditImage, onReviewDesign, isProcessing, onUpdateSleeve, onFinalizeOrder 
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
+  // --- LOCAL STATE BUFFER (The solution to the lag issue) ---
+  // We store changes here first, then commit them to DB in batch.
+  const [pendingSlotChanges, setPendingSlotChanges] = useState<Record<string, PendingSlotChange>>({});
+  const [pendingSleeveChanges, setPendingSleeveChanges] = useState<Record<string, PendingSleeveChange>>({});
+
+  const hasUnsavedChanges = Object.keys(pendingSlotChanges).length > 0 || Object.keys(pendingSleeveChanges).length > 0;
+
+  // --- HELPERS FOR LOCAL STATE ---
+  const handleLocalSlotChange = (orderId: string, itemId: string, slotId: string, change: Partial<EmbroiderySlot>) => {
+      setPendingSlotChanges(prev => ({
+          ...prev,
+          [slotId]: {
+              orderId,
+              itemId,
+              changes: { ...(prev[slotId]?.changes || {}), ...change }
+          }
+      }));
+  };
+
+  const handleLocalSleeveChange = (orderId: string, itemId: string, config: SleeveConfig | undefined) => {
+      setPendingSleeveChanges(prev => ({
+          ...prev,
+          [itemId]: { orderId, itemId, config }
+      }));
+  };
+
+  const saveAllChanges = async () => {
+      setIsSaving(true);
+      try {
+          // 1. Commit Slot Changes
+          const slotPromises = Object.entries(pendingSlotChanges).map(([slotId, data]) => {
+             return onUpdateSlot(data.orderId, data.itemId, slotId, data.changes);
+          });
+
+          // 2. Commit Sleeve Changes
+          const sleevePromises = Object.entries(pendingSleeveChanges).map(([itemId, data]) => {
+              return onUpdateSleeve?.(data.orderId, itemId, data.config);
+          });
+
+          await Promise.all([...slotPromises, ...sleevePromises]);
+          
+          setPendingSlotChanges({});
+          setPendingSleeveChanges({});
+          toast.success("¡Cambios guardados correctamente!");
+
+      } catch (e) {
+          toast.error("Hubo un error al guardar los cambios.");
+          console.error(e);
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const discardChanges = () => {
+      if(window.confirm("¿Estás seguro de descartar los cambios no guardados?")) {
+          setPendingSlotChanges({});
+          setPendingSleeveChanges({});
+      }
+  };
+
+  // --- FILTERING ---
   const filteredOrders = orders.filter(o => 
       o.id.includes(searchTerm) || 
       o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // HELPER: Detect sleeve item robustly using DB Type or SKU fallback
+  // HELPER: Detect sleeve item robustly
   const isSleeveItem = (item: OrderItem) => {
-      // 1. Priority check: Database Type
       if (item.customizationType === 'TEXT_ONLY') return true;
-      // 2. Fallback check: Legacy SKU
       return item.sku && item.sku.toLowerCase() === 'extra-manga';
   };
 
-  // HELPER: GROUP ITEMS BY GROUP_ID
+  // HELPER: GROUP ITEMS
   const groupItems = (items: OrderItem[]) => {
       const bundles: Record<string, OrderItem[]> = {};
       const singles: OrderItem[] = [];
 
       items.forEach(item => {
-          if (isSleeveItem(item)) return; // Skip logic items (Credits)
+          if (isSleeveItem(item)) return; 
           if (item.groupId) {
               if (!bundles[item.groupId]) bundles[item.groupId] = [];
               bundles[item.groupId].push(item);
@@ -57,7 +132,7 @@ const ClientView: React.FC<ClientViewProps> = ({
       return { bundles, singles };
   };
 
-  // SUB-COMPONENT: PET CARD (Used inside Item or Bundle)
+  // SUB-COMPONENT: PET CARD
   const PetSlotCard: React.FC<{ 
       slot: EmbroiderySlot; 
       index: number; 
@@ -66,14 +141,29 @@ const ClientView: React.FC<ClientViewProps> = ({
       isLocked: boolean; 
       isPrimaryInBundle?: boolean; 
   }> = ({ 
-      slot, 
-      index, 
-      item, 
-      order, 
-      isLocked,
-      isPrimaryInBundle = true // If false (secondary in bundle), hide photo upload to reduce clutter, as it syncs
-  }) => (
-      <div key={slot.id} className={`border rounded-2xl p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'}`}>
+      slot, index, item, order, isLocked, isPrimaryInBundle = true 
+  }) => {
+      // MERGE LOCAL STATE WITH PROPS
+      // If there's a pending change, show that. Otherwise show DB value.
+      const pending = pendingSlotChanges[slot.id]?.changes;
+      
+      const displayValues = {
+          petName: pending?.petName !== undefined ? pending.petName : slot.petName,
+          position: pending?.position !== undefined ? pending.position : slot.position,
+          includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
+      };
+
+      const isModified = !!pending;
+
+      return (
+      <div key={slot.id} className={`border rounded-2xl p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isModified ? 'ring-2 ring-blue-400 border-blue-400' : ''}`}>
+         
+         {isModified && (
+             <div className="absolute -top-3 -right-2 bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm z-20">
+                 Modificado
+             </div>
+         )}
+
          {/* SLOT HEADER */}
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
             <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -99,7 +189,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                     </div>
                   )}
                   
-                  {/* Upload logic */}
+                  {/* Upload logic triggers IMMEDIATE save via React Query invaliation, so we don't use local state for files */}
                   {(slot.status === 'EMPTY' || slot.status === 'REJECTED') && !isLocked && (
                      <label className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer z-10">
                         <Upload className="w-8 h-8 text-white mb-2" />
@@ -110,6 +200,10 @@ const ClientView: React.FC<ClientViewProps> = ({
                             accept="image/*" 
                             onChange={(e) => {
                                 if (e.target.files?.[0]) {
+                                    if(hasUnsavedChanges) {
+                                        alert("Por favor guarda tus cambios de texto antes de subir una foto.");
+                                        return;
+                                    }
                                     onInitiateUpload(e.target.files[0], order.id, item.id, slot.id);
                                     e.target.value = '';
                                 }
@@ -146,8 +240,9 @@ const ClientView: React.FC<ClientViewProps> = ({
                     disabled={isLocked}
                     placeholder="Ej: Rocky"
                     className={`w-full text-sm border-gray-200 rounded-lg py-2.5 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
-                    value={slot.petName || ''}
-                    onChange={(e) => onUpdateSlot(order.id, item.id, slot.id, { petName: e.target.value })}
+                    value={displayValues.petName || ''}
+                    // HERE IS THE FIX: Update local state instead of calling API immediately
+                    onChange={(e) => handleLocalSlotChange(order.id, item.id, slot.id, { petName: e.target.value })}
                   />
                </div>
                )}
@@ -160,8 +255,9 @@ const ClientView: React.FC<ClientViewProps> = ({
                   <GarmentVisualizer 
                         productName={item.productName}
                         sku={item.sku}
-                        selected={slot.position} 
-                        onSelect={(pos) => !isLocked && onUpdateSlot(order.id, item.id, slot.id, { position: pos })}
+                        selected={displayValues.position} 
+                        // HERE IS THE FIX: Update local state
+                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order.id, item.id, slot.id, { position: pos })}
                         slotCount={item.customizations.length}
                         readOnly={isLocked}
                   />
@@ -170,17 +266,17 @@ const ClientView: React.FC<ClientViewProps> = ({
                {isPrimaryInBundle && (
                <div className="flex items-center gap-3">
                   {isLocked ? (
-                      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border w-full ${slot.includeHalo ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                        {slot.includeHalo ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                        <span className="text-xs font-bold">{slot.includeHalo ? 'Con Aureola 😇' : 'Sin Aureola'}</span>
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border w-full ${displayValues.includeHalo ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                        {displayValues.includeHalo ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                        <span className="text-xs font-bold">{displayValues.includeHalo ? 'Con Aureola 😇' : 'Sin Aureola'}</span>
                       </div>
                   ) : (
-                      <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100 w-full">
+                      <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100 w-full cursor-pointer hover:bg-gray-100" onClick={() => handleLocalSlotChange(order.id, item.id, slot.id, { includeHalo: !displayValues.includeHalo })}>
                           <button 
-                            onClick={() => onUpdateSlot(order.id, item.id, slot.id, { includeHalo: !slot.includeHalo })}
-                            className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${slot.includeHalo ? 'bg-brand-500 border-brand-600 text-white shadow-sm' : 'bg-white border-gray-300 hover:border-brand-400'}`}
+                            // Using div onClick parent instead for better hit area
+                            className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${displayValues.includeHalo ? 'bg-brand-500 border-brand-600 text-white shadow-sm' : 'bg-white border-gray-300'}`}
                           >
-                            {slot.includeHalo && <Check className="w-3.5 h-3.5" />}
+                            {displayValues.includeHalo && <Check className="w-3.5 h-3.5" />}
                           </button>
                           <span className="text-xs font-medium text-gray-700">Incluir Aureola 😇</span>
                       </div>
@@ -189,63 +285,11 @@ const ClientView: React.FC<ClientViewProps> = ({
                )}
             </div>
          </div>
-         
-        {/* AI EDIT TOOLS */}
-        {!isLocked && slot.photoUrl && isPrimaryInBundle && (
-            <div className="mt-4 pt-4 border-t border-gray-50">
-                <div className="flex items-center gap-2">
-                    <button 
-                        onClick={() => setSelectedSlotId(selectedSlotId === slot.id ? null : slot.id)}
-                        className="text-xs flex items-center gap-1.5 text-brand-600 font-bold hover:text-brand-700"
-                    >
-                        <Wand2 className="w-3.5 h-3.5" />
-                        Mejorar con IA
-                    </button>
-                </div>
-
-                {selectedSlotId === slot.id && (
-                    <div className="mt-3 bg-brand-50/50 p-3 rounded-xl border border-brand-100 animate-in slide-in-from-top-2">
-                        <p className="text-xs font-bold text-gray-700 mb-2">Edición Rápida (Beta)</p>
-                        <div className="flex flex-wrap gap-2 mb-3">
-                            {QUICK_EDITS.map(prompt => (
-                                <button 
-                                    key={prompt}
-                                    onClick={() => setEditPrompt(prompt)}
-                                    className="px-2 py-1 bg-white border border-brand-100 rounded-md text-[10px] font-medium text-brand-700 hover:bg-brand-50 hover:border-brand-200 transition-colors"
-                                >
-                                    {prompt}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex gap-2">
-                            <input 
-                                type="text" 
-                                placeholder="Describe cómo mejorar la foto..." 
-                                className="flex-1 text-xs border-gray-200 rounded-lg focus:ring-brand-500"
-                                value={editPrompt}
-                                onChange={(e) => setEditPrompt(e.target.value)}
-                            />
-                            <button 
-                                onClick={() => {
-                                    onEditImage(order.id, item.id, slot.id, slot.photoUrl!, editPrompt);
-                                    setSelectedSlotId(null);
-                                    setEditPrompt('');
-                                }}
-                                disabled={isProcessing || !editPrompt}
-                                className="px-3 py-1.5 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 disabled:opacity-50"
-                            >
-                                {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : 'Aplicar'}
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        )}
       </div>
-  );
+  )};
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-24"> {/* Added padding bottom for floating bar */}
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -267,7 +311,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       {/* ORDERS LIST */}
       <div className="grid gap-12">
         {filteredOrders.map(order => {
-            // Read-only Logic
             const isLocked = ![
                 OrderStatus.PENDING_UPLOAD,
                 OrderStatus.ACTION_REQUIRED,
@@ -275,13 +318,21 @@ const ClientView: React.FC<ClientViewProps> = ({
                 OrderStatus.DESIGN_REJECTED
             ].includes(order.status);
 
-            // Sleeve Credits Logic (GLOBAL FOR ORDER)
             const sleeveItems = order.items.filter(i => isSleeveItem(i));
             const totalSleeveCredits = sleeveItems.reduce((acc, item) => acc + item.quantity, 0);
             const assignedSleeves = order.items.filter(i => i.sleeve).length;
             const remainingSleeves = totalSleeveCredits - assignedSleeves;
 
             const { bundles, singles } = groupItems(order.items);
+
+            // Check if order is complete to allow sending
+            const isOrderComplete = order.items.every(item => 
+                item.sku === 'extra-manga' || 
+                item.customizations.every(slot => slot.status === 'APPROVED' || slot.status === 'ANALYZING' || (slot.photoUrl)) 
+                // We check photoUrl because status might still be EMPTY locally before AI runs
+            );
+            
+            const isReadyToSend = isOrderComplete && !hasUnsavedChanges && !isLocked;
 
             return (
           <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ring-1 ring-black/5">
@@ -307,10 +358,28 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
                   <div className="flex flex-col items-end gap-2">
                      <StatusBadge status={order.status} />
-                     {totalSleeveCredits > 0 && (
-                         <span className={`text-xs font-bold px-2 py-1 rounded-full border ${remainingSleeves > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
-                             {remainingSleeves > 0 ? `✨ Tienes ${remainingSleeves} bordado(s) de manga disponible` : '✅ Todos los bordados de manga asignados'}
-                         </span>
+                     {!isLocked && (
+                         <button 
+                            onClick={() => {
+                                if(hasUnsavedChanges) {
+                                    toast.error("Guarda tus cambios antes de enviar.");
+                                    return;
+                                }
+                                if(!isOrderComplete) {
+                                    toast.error("Faltan fotos por subir en algunos productos.");
+                                    return;
+                                }
+                                if(window.confirm("¿Estás seguro de que terminaste? Una vez enviado, pasará a diseño.")) {
+                                    onFinalizeOrder(order.id);
+                                    toast.success("¡Pedido enviado a diseño!");
+                                }
+                            }}
+                            disabled={!isReadyToSend}
+                            className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all ${isReadyToSend ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md hover:scale-105 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                         >
+                            <Send className="w-3 h-3" />
+                            {isReadyToSend ? 'Finalizar y Enviar a Diseño' : 'Completa las fotos para enviar'}
+                         </button>
                      )}
                   </div>
                </div>
@@ -351,12 +420,13 @@ const ClientView: React.FC<ClientViewProps> = ({
                              )}
                         </div>
 
+                        {/* REVIEW BUTTONS */}
+                        {/* ... (Kept same logic for review) ... */}
                         {rejectingOrderId === order.id ? (
                             <div className="max-w-md mx-auto bg-white p-6 rounded-xl border border-red-200 shadow-md animate-in fade-in slide-in-from-bottom-4">
                                 <h4 className="font-bold text-red-700 mb-2 flex items-center gap-2 justify-center">
                                     <AlertTriangle className="w-5 h-5"/> Solicitar Cambios
                                 </h4>
-                                <p className="text-sm text-gray-500 mb-4">Cuéntanos qué te gustaría modificar para que quede perfecto.</p>
                                 <textarea 
                                     className="w-full border-gray-300 rounded-lg mb-4 text-sm focus:ring-red-500 focus:border-red-500" 
                                     rows={3}
@@ -365,116 +435,21 @@ const ClientView: React.FC<ClientViewProps> = ({
                                     onChange={(e) => setRejectionReason(e.target.value)}
                                 />
                                 <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => setRejectingOrderId(null)}
-                                        className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            onReviewDesign(order.id, false, rejectionReason);
-                                            setRejectingOrderId(null);
-                                            setRejectionReason('');
-                                        }}
-                                        disabled={!rejectionReason.trim()}
-                                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg disabled:opacity-50"
-                                    >
-                                        Enviar Solicitud
-                                    </button>
+                                    <button onClick={() => setRejectingOrderId(null)} className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+                                    <button onClick={() => { onReviewDesign(order.id, false, rejectionReason); setRejectingOrderId(null); setRejectionReason(''); }} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg">Enviar Solicitud</button>
                                 </div>
                             </div>
                         ) : (
                             <div className="flex flex-col sm:flex-row justify-center gap-4">
-                                <button 
-                                    onClick={() => setRejectingOrderId(order.id)}
-                                    className="px-6 py-3 bg-white border-2 border-red-100 text-red-600 font-bold rounded-xl hover:bg-red-50 hover:border-red-200 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <XCircle className="w-5 h-5" />
-                                    Solicitar Cambios
-                                </button>
-                                <button 
-                                    onClick={() => onReviewDesign(order.id, true)}
-                                    className="px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 hover:scale-105 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <CheckCircle className="w-5 h-5" />
-                                    ¡Me encanta, Aprobar!
-                                </button>
+                                <button onClick={() => setRejectingOrderId(order.id)} className="px-6 py-3 bg-white border-2 border-red-100 text-red-600 font-bold rounded-xl hover:bg-red-50 hover:border-red-200 transition-all flex items-center justify-center gap-2"><XCircle className="w-5 h-5" /> Solicitar Cambios</button>
+                                <button onClick={() => onReviewDesign(order.id, true)} className="px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 hover:scale-105 transition-all flex items-center justify-center gap-2"><CheckCircle className="w-5 h-5" /> ¡Me encanta, Aprobar!</button>
                             </div>
                         )}
                     </div>
                  </div>
               )}
 
-              {/* DESIGN REJECTED (Feedback Loop) */}
-              {order.status === OrderStatus.DESIGN_REJECTED && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex flex-col items-center text-center">
-                       <div className="bg-red-100 p-3 rounded-full mb-3 text-red-600">
-                           <AlertTriangle className="w-6 h-6" />
-                       </div>
-                       <h3 className="text-xl font-bold text-red-800 mb-1">Diseño Rechazado</h3>
-                       <p className="text-red-700 mb-2">Has solicitado cambios. El diseñador está trabajando en la nueva versión.</p>
-                       <p className="text-sm bg-white px-3 py-1 rounded border border-red-100 text-gray-500 italic">"{order.clientFeedback}"</p>
-                  </div>
-              )}
-
-              {/* PRODUCTION STATUS */}
-              {[OrderStatus.READY_TO_EMBROIDER, OrderStatus.IN_PROGRESS, OrderStatus.READY_FOR_DISPATCH].includes(order.status) && (
-                   <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 flex items-center gap-4">
-                       <div className="bg-blue-100 p-3 rounded-full text-blue-600 hidden sm:block">
-                           <Shirt className="w-6 h-6" />
-                       </div>
-                       <div>
-                           <h3 className="text-lg font-bold text-blue-900">En Producción 🪡</h3>
-                           <p className="text-blue-800 text-sm">Tu diseño fue aprobado y ya está en cola de bordado. ¡Pronto estará listo!</p>
-                       </div>
-                   </div>
-              )}
-
-              {/* DISPATCHED (SUCCESS & EVIDENCE) */}
-              {order.status === OrderStatus.DISPATCHED && (
-                <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 md:p-8 text-center mb-8">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600 shadow-sm">
-                        <Truck className="w-8 h-8" />
-                    </div>
-                    <h3 className="text-2xl font-extrabold text-green-900 mb-2">¡Tu pedido va en camino! 🚚</h3>
-                    <p className="text-green-800 mb-8 max-w-lg mx-auto">
-                        Hemos terminado la producción y tu paquete ha sido despachado. Aquí tienes la evidencia final.
-                    </p>
-
-                    <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-                        <div className="bg-white p-4 rounded-xl shadow-md border border-green-100 transform transition-transform hover:scale-[1.02]">
-                            <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-3 relative">
-                                {order.finishedProductPhoto ? (
-                                    <img src={order.finishedProductPhoto} className="w-full h-full object-cover" alt="Bordado Terminado" />
-                                ) : (
-                                    <div className="flex items-center justify-center h-full text-gray-400 text-xs">Sin foto disponible</div>
-                                )}
-                                <div className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
-                                    Resultado
-                                </div>
-                            </div>
-                            <p className="font-bold text-gray-800 text-sm">Bordado Terminado ✨</p>
-                        </div>
-
-                        <div className="bg-white p-4 rounded-xl shadow-md border border-green-100 transform transition-transform hover:scale-[1.02]">
-                                <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-3 relative">
-                                {order.packedProductPhoto ? (
-                                    <img src={order.packedProductPhoto} className="w-full h-full object-cover" alt="Paquete Listo" />
-                                ) : (
-                                        <div className="flex items-center justify-center h-full text-gray-400 text-xs">Sin foto disponible</div>
-                                )}
-                                <div className="absolute top-2 right-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
-                                    Empaque
-                                </div>
-                            </div>
-                            <p className="font-bold text-gray-800 text-sm">Paquete Listo 📦</p>
-                        </div>
-                    </div>
-                </div>
-              )}
-
-              {/* RENDER BUNDLES (SUPER PACKS) - WITH ENHANCED SYNC VISUALIZATION */}
+              {/* RENDER BUNDLES (SUPER PACKS) */}
               {Object.entries(bundles).map(([groupId, items]) => (
                   <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-6 md:p-8">
                       <div className="flex items-center gap-3 mb-6">
@@ -490,71 +465,41 @@ const ClientView: React.FC<ClientViewProps> = ({
                           </div>
                       </div>
 
-                      {/* Iterate primarily over the slots of the first item (Master) */}
                       <div className="space-y-8">
                           {items[0].customizations.map((slot, idx) => (
                               <div key={slot.id} className="relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                                  {/* MASTER SLOT (Photo applies to this index across all items) */}
                                   <h5 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 border-b border-gray-50 pb-2">
                                       <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-mono">{idx + 1}</span>
                                       Mascota #{idx + 1} (Aplica a todo el pack)
                                   </h5>
 
                                   <div className="grid lg:grid-cols-5 gap-8">
-                                      {/* PRIMARY UPLOAD CARD (Takes up 3 cols) */}
                                       <div className="lg:col-span-3">
-                                          <PetSlotCard 
-                                            slot={slot} 
-                                            index={idx} 
-                                            item={items[0]} 
-                                            order={order} 
-                                            isLocked={isLocked}
-                                            isPrimaryInBundle={true}
-                                          />
+                                          <PetSlotCard slot={slot} index={idx} item={items[0]} order={order} isLocked={isLocked} isPrimaryInBundle={true} />
                                       </div>
 
-                                      {/* SECONDARY ITEM POSITIONS (Take up 2 cols) */}
                                       <div className="lg:col-span-2 space-y-4">
                                           {items.slice(1).map(siblingItem => {
-                                              // Ensure sibling has this slot index
                                               const siblingSlot = siblingItem.customizations[idx];
                                               if (!siblingSlot) return null;
+                                              const pendingSibling = pendingSlotChanges[siblingSlot.id]?.changes;
+                                              const siblingDisplayPos = pendingSibling?.position !== undefined ? pendingSibling.position : siblingSlot.position;
 
                                               return (
-                                              <div key={siblingItem.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200 relative overflow-hidden">
-                                                  {/* VISUAL CONNECTION LINE (Conceptual) */}
+                                              <div key={siblingItem.id} className={`bg-gray-50 rounded-xl p-4 border border-gray-200 relative overflow-hidden ${pendingSibling ? 'ring-2 ring-blue-400' : ''}`}>
                                                   <div className="absolute top-0 left-0 w-1 h-full bg-brand-200"></div>
-
                                                   <div className="flex items-center gap-2 mb-3">
-                                                      <div className="p-1.5 bg-white rounded border border-gray-200 shadow-sm">
-                                                          <Link className="w-3 h-3 text-brand-500" />
-                                                      </div>
+                                                      <div className="p-1.5 bg-white rounded border border-gray-200 shadow-sm"><Link className="w-3 h-3 text-brand-500" /></div>
                                                       <div className="flex-1 min-w-0">
                                                           <span className="text-xs font-bold text-gray-500 uppercase block tracking-wider">Sincronizado en:</span>
                                                           <span className="text-sm font-bold text-gray-800 truncate block">{siblingItem.productName}</span>
                                                       </div>
                                                   </div>
-
-                                                  {/* SYNC STATUS */}
-                                                  {slot.photoUrl ? (
-                                                      <div className="flex items-center gap-2 mb-3 bg-brand-100/50 p-2 rounded text-brand-800 text-xs">
-                                                          <Check className="w-3 h-3" />
-                                                          <span>Usando foto de <strong>{slot.petName || `Mascota ${idx + 1}`}</strong></span>
-                                                      </div>
-                                                  ) : (
-                                                      <div className="flex items-center gap-2 mb-3 bg-gray-100 p-2 rounded text-gray-400 text-xs italic">
-                                                          <ArrowRight className="w-3 h-3" />
-                                                          Esperando foto principal...
-                                                      </div>
-                                                  )}
-
                                                   <label className="text-[10px] font-bold text-gray-400 mb-1 block uppercase">Ubicación</label>
                                                   <GarmentVisualizer 
-                                                        productName={siblingItem.productName}
-                                                        sku={siblingItem.sku}
-                                                        selected={siblingSlot.position} 
-                                                        onSelect={(pos) => !isLocked && onUpdateSlot(order.id, siblingItem.id, siblingSlot.id, { position: pos })}
-                                                        readOnly={isLocked}
+                                                        productName={siblingItem.productName} sku={siblingItem.sku} readOnly={isLocked}
+                                                        selected={siblingDisplayPos} 
+                                                        onSelect={(pos) => !isLocked && handleLocalSlotChange(order.id, siblingItem.id, siblingSlot.id, { position: pos })}
                                                   />
                                               </div>
                                               );
@@ -565,53 +510,36 @@ const ClientView: React.FC<ClientViewProps> = ({
                           ))}
                       </div>
 
-                      {/* SLEEVE SECTION FOR BUNDLES (NEW) */}
+                      {/* SLEEVE SECTION FOR BUNDLES */}
                       {totalSleeveCredits > 0 && items.some(i => !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => i.sku.toLowerCase().includes(t.toLowerCase()))) && (
                         <div className="mt-8 pt-8 border-t border-brand-100">
-                             <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-                                <Tag className="w-4 h-4 text-brand-500"/> Configuración de Mangas (Pack)
-                             </h4>
+                             <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4"><Tag className="w-4 h-4 text-brand-500"/> Configuración de Mangas (Pack)</h4>
                              <div className="grid md:grid-cols-2 gap-4">
                                 {items.map(item => {
-                                    // Filter out items that don't support sleeves (e.g. Caps)
                                     if (['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase()))) return null;
+                                    
+                                    const pendingSleeve = pendingSleeveChanges[item.id]?.config;
+                                    const displaySleeve = pendingSleeve !== undefined ? pendingSleeve : item.sleeve;
+                                    const isSleeveModified = pendingSleeve !== undefined;
 
                                     return (
-                                        <div key={item.id} className="bg-white rounded-xl p-4 border border-gray-200">
+                                        <div key={item.id} className={`bg-white rounded-xl p-4 border border-gray-200 relative ${isSleeveModified ? 'ring-2 ring-blue-400' : ''}`}>
+                                            {isSleeveModified && <div className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full"></div>}
                                             <div className="flex justify-between items-start mb-3">
                                                 <p className="text-xs font-bold text-gray-700">{item.productName}</p>
-                                                
-                                                {!item.sleeve && !isLocked && (
-                                                    <button
-                                                        onClick={() => onUpdateSleeve?.(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })}
-                                                        disabled={remainingSleeves === 0}
-                                                        className="text-[10px] bg-gray-50 border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50"
-                                                    >
-                                                        {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>}
-                                                        Agregar
+                                                {!displaySleeve && !isLocked && (
+                                                    <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={remainingSleeves === 0} className="text-[10px] bg-gray-50 border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50">
+                                                        {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} Agregar
                                                     </button>
                                                 )}
-                                                
-                                                {item.sleeve && !isLocked && (
-                                                    <button
-                                                        onClick={() => onUpdateSleeve?.(order.id, item.id, undefined)}
-                                                        className="text-[10px] bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 font-bold px-2 py-1 rounded flex items-center gap-1"
-                                                    >
-                                                        <Minus className="w-3 h-3"/> Quitar
-                                                    </button>
+                                                {displaySleeve && !isLocked && (
+                                                    <button onClick={() => handleLocalSleeveChange(order.id, item.id, undefined)} className="text-[10px] bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 font-bold px-2 py-1 rounded flex items-center gap-1"><Minus className="w-3 h-3"/> Quitar</button>
                                                 )}
                                             </div>
-
-                                            {item.sleeve ? (
-                                                <SleeveDesigner 
-                                                    config={item.sleeve} 
-                                                    readOnly={isLocked}
-                                                    onChange={(newConfig) => onUpdateSleeve?.(order.id, item.id, newConfig)} 
-                                                />
+                                            {displaySleeve ? (
+                                                <SleeveDesigner config={displaySleeve} readOnly={isLocked} onChange={(newConfig) => handleLocalSleeveChange(order.id, item.id, newConfig)} />
                                             ) : (
-                                                <div className="text-center py-4 border border-dashed border-gray-200 rounded-lg bg-gray-50">
-                                                    <p className="text-[10px] text-gray-400">Sin manga asignada</p>
-                                                </div>
+                                                <div className="text-center py-4 border border-dashed border-gray-200 rounded-lg bg-gray-50"><p className="text-[10px] text-gray-400">Sin manga asignada</p></div>
                                             )}
                                         </div>
                                     );
@@ -622,87 +550,58 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
               ))}
 
-              {/* RENDER SINGLES (Existing Logic) */}
+              {/* RENDER SINGLES */}
               {singles.map(item => (
                 <div key={item.id} className="border-b last:border-0 border-gray-100 pb-12 last:pb-0">
                   <div className="flex items-start gap-4 mb-8">
-                     <div className="bg-brand-50 p-3 rounded-xl ring-1 ring-brand-100">
-                        <Shirt className="w-8 h-8 text-brand-600" />
-                     </div>
+                     <div className="bg-brand-50 p-3 rounded-xl ring-1 ring-brand-100"><Shirt className="w-8 h-8 text-brand-600" /></div>
                      <div className="flex-1">
                         <h4 className="font-bold text-lg text-gray-900 leading-tight">{item.productName}</h4>
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 text-xs font-mono border border-gray-200">{item.sku}</span>
-                           {item.color && (
-                               <span className="bg-white px-2 py-0.5 rounded text-gray-600 text-xs font-bold border border-gray-200 shadow-sm flex items-center gap-1">
-                                   <span className="w-2 h-2 rounded-full bg-gray-400"></span> {item.color}
-                               </span>
-                           )}
-                           {item.size && (
-                               <span className="bg-white px-2 py-0.5 rounded text-gray-600 text-xs font-bold border border-gray-200 shadow-sm">
-                                   Talla: {item.size}
-                               </span>
-                           )}
                         </div>
                      </div>
                   </div>
 
                   <div className="grid lg:grid-cols-2 gap-8 mb-8">
                     {item.customizations.map((slot, index) => (
-                      <PetSlotCard 
-                        key={slot.id}
-                        slot={slot}
-                        index={index}
-                        item={item}
-                        order={order}
-                        isLocked={isLocked}
-                      />
+                      <PetSlotCard key={slot.id} slot={slot} index={index} item={item} order={order} isLocked={isLocked} />
                     ))}
                   </div>
 
-                  {/* SLEEVE CONFIGURATION SECTION */}
+                  {/* SLEEVE FOR SINGLES */}
                   {totalSleeveCredits > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
                       <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
                           <div className="flex justify-between items-start mb-4">
-                              <div>
-                                  <h5 className="font-bold text-gray-900 flex items-center gap-2">
-                                      <Tag className="w-4 h-4 text-brand-500"/> Bordado en Manga (Extra)
-                                  </h5>
-                                  <p className="text-xs text-gray-500 mt-1">Personaliza la manga derecha de este producto.</p>
-                              </div>
+                              <div><h5 className="font-bold text-gray-900 flex items-center gap-2"><Tag className="w-4 h-4 text-brand-500"/> Bordado en Manga (Extra)</h5></div>
                               
-                              {!item.sleeve && !isLocked && (
-                                  <button
-                                    onClick={() => onUpdateSleeve?.(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })}
-                                    disabled={remainingSleeves === 0}
-                                    className="text-xs bg-white border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                      {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>}
-                                      {remainingSleeves > 0 ? 'Agregar Manga' : 'Sin créditos'}
-                                  </button>
-                              )}
-
-                              {item.sleeve && !isLocked && (
-                                  <button
-                                    onClick={() => onUpdateSleeve?.(order.id, item.id, undefined)}
-                                    className="text-xs bg-white border border-red-200 hover:bg-red-50 text-red-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1"
-                                  >
-                                      <Minus className="w-3 h-3"/> Quitar
-                                  </button>
-                              )}
+                              {/* Using local state logic here too */}
+                              {(() => {
+                                  const pendingSleeve = pendingSleeveChanges[item.id]?.config;
+                                  const displaySleeve = pendingSleeve !== undefined ? pendingSleeve : item.sleeve;
+                                  
+                                  if (!displaySleeve && !isLocked) return (
+                                      <button onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })} disabled={remainingSleeves === 0} className="text-xs bg-white border border-gray-200 hover:border-brand-300 text-brand-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                                          {remainingSleeves > 0 ? <Plus className="w-3 h-3"/> : <Lock className="w-3 h-3"/>} {remainingSleeves > 0 ? 'Agregar Manga' : 'Sin créditos'}
+                                      </button>
+                                  );
+                                  if (displaySleeve && !isLocked) return (
+                                      <button onClick={() => handleLocalSleeveChange(order.id, item.id, undefined)} className="text-xs bg-white border border-red-200 hover:bg-red-50 text-red-600 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1"><Minus className="w-3 h-3"/> Quitar</button>
+                                  );
+                                  return null;
+                              })()}
                           </div>
+                          
+                          {(() => {
+                              const pendingSleeve = pendingSleeveChanges[item.id]?.config;
+                              const displaySleeve = pendingSleeve !== undefined ? pendingSleeve : item.sleeve;
 
-                          {item.sleeve ? (
-                              <SleeveDesigner 
-                                  config={item.sleeve} 
-                                  readOnly={isLocked}
-                                  onChange={(newConfig) => onUpdateSleeve?.(order.id, item.id, newConfig)} 
-                              />
-                          ) : (
-                              <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-xl">
-                                  <p className="text-xs text-gray-400">Sin bordado en manga asignado</p>
-                              </div>
-                          )}
+                              return displaySleeve ? (
+                                  <SleeveDesigner config={displaySleeve} readOnly={isLocked} onChange={(newConfig) => handleLocalSleeveChange(order.id, item.id, newConfig)} />
+                              ) : (
+                                  <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-xl"><p className="text-xs text-gray-400">Sin bordado en manga asignado</p></div>
+                              );
+                          })()}
                       </div>
                   )}
                 </div>
@@ -712,6 +611,40 @@ const ClientView: React.FC<ClientViewProps> = ({
         );
       })}
       </div>
+
+      {/* --- UNSAVED CHANGES FLOATING BAR --- */}
+      {hasUnsavedChanges && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-6 fade-in duration-300">
+              <div className="bg-gray-900 text-white p-2 pl-4 pr-2 rounded-2xl shadow-2xl flex items-center gap-4 border border-gray-700">
+                  <div className="flex flex-col">
+                      <span className="text-sm font-bold flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                          Cambios sin guardar
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                          {Object.keys(pendingSlotChanges).length + Object.keys(pendingSleeveChanges).length} modificaciones pendientes
+                      </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                      <button 
+                          onClick={discardChanges}
+                          className="px-3 py-2 text-xs font-bold text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-colors flex items-center gap-1"
+                      >
+                          <RotateCcw className="w-3 h-3" /> Descartar
+                      </button>
+                      <button 
+                          onClick={saveAllChanges}
+                          disabled={isSaving}
+                          className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-brand-900/50 transition-all hover:scale-105 flex items-center gap-2"
+                      >
+                          {isSaving ? <Loader2 className="w-3 h-3 animate-spin"/> : <Save className="w-4 h-4" />}
+                          Guardar Todo
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };

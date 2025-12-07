@@ -92,6 +92,7 @@ const App: React.FC = () => {
                 onInitiateUpload={(file, orderId, itemId, slotId) => setPendingUpload({ file, orderId, itemId, slotId })}
                 onEditImage={(orderId, itemId, slotId, currentImage, prompt) => onEditImage({ orderId, itemId, slotId, currentImage, prompt })}
                 onReviewDesign={(orderId, approved, feedback) => onReviewDesign({ orderId, approved, feedback })}
+                onFinalizeOrder={(orderId) => onUpdateStatus({ orderId, newStatus: 'WAITING_FOR_DESIGN' as any })} // Nueva prop
             />
         )}
 
