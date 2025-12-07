@@ -5,7 +5,7 @@ import StatusBadge from '../StatusBadge';
 import OrderProgress from '../OrderProgress';
 import GarmentVisualizer from '../GarmentVisualizer';
 import SleeveDesigner from '../SleeveDesigner';
-import { Search, Lock, Palette, Sparkles, CheckCircle, XCircle, Wand2, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Truck } from 'lucide-react';
+import { Search, Lock, Palette, Sparkles, CheckCircle, XCircle, Wand2, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Truck, ArrowRight, Layers, Link } from 'lucide-react';
 
 interface ClientViewProps {
   orders: Order[];
@@ -77,8 +77,8 @@ const ClientView: React.FC<ClientViewProps> = ({
          {/* SLOT HEADER */}
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
             <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
-               <span className="bg-brand-100 text-brand-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">{index + 1}</span>
-               Mascota / Bordado
+               <span className="bg-brand-100 text-brand-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono">{index + 1}</span>
+               Mascota #{index + 1}
             </span>
             {slot.status === 'APPROVED' && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-green-100"><CheckCircle className="w-3 h-3"/> Aprobado</span>}
             {slot.status === 'REJECTED' && <span className="bg-red-50 text-red-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-red-100"><XCircle className="w-3 h-3"/> Acción Requerida</span>}
@@ -95,7 +95,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
                       <ImageIcon className="w-8 h-8" />
-                      <span className="text-xs">Sin Foto</span>
+                      <span className="text-xs text-center px-2">Subir Foto Mascota {index + 1}</span>
                     </div>
                   )}
                   
@@ -140,7 +140,7 @@ const ClientView: React.FC<ClientViewProps> = ({
             <div className="flex-1 space-y-4 min-w-0">
                {isPrimaryInBundle && (
                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">Nombre Mascota</label>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">Nombre Mascota {index + 1}</label>
                   <input 
                     type="text" 
                     disabled={isLocked}
@@ -154,7 +154,7 @@ const ClientView: React.FC<ClientViewProps> = ({
 
                <div className="w-full">
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                      <span>Ubicación {item.productName.includes('Pack') ? item.sku.includes('hood') ? 'Hoodie' : 'Jockey' : ''}</span>
+                      <span>Ubicación en {item.productName.includes('Pack') ? (item.sku.includes('hood') ? 'Hoodie/Polerón' : item.sku.includes('cap') || item.sku.includes('jockey') ? 'Jockey' : 'Prenda Principal') : 'Prenda'}</span>
                       {isPrimaryInBundle === false && <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 rounded">Configuración Individual</span>}
                   </label>
                   <GarmentVisualizer 
@@ -276,7 +276,6 @@ const ClientView: React.FC<ClientViewProps> = ({
             ].includes(order.status);
 
             // Sleeve Credits Logic (GLOBAL FOR ORDER)
-            // Use robust check passing the full item object
             const sleeveItems = order.items.filter(i => isSleeveItem(i));
             const totalSleeveCredits = sleeveItems.reduce((acc, item) => acc + item.quantity, 0);
             const assignedSleeves = order.items.filter(i => i.sleeve).length;
@@ -323,8 +322,8 @@ const ClientView: React.FC<ClientViewProps> = ({
             <div className="p-6 md:p-8 space-y-12">
               
               {/* --- BANNERS AND APPROVAL UI --- */}
+              {/* (Existing Banners Kept Intact) */}
               
-              {/* 1. WAITING FOR DESIGN */}
               {order.status === OrderStatus.WAITING_FOR_DESIGN && (
                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 text-center">
                      <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -337,7 +336,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                  </div>
               )}
 
-              {/* 2. DESIGN REVIEW - APPROVAL UI (CRITICAL RESTORED SECTION) */}
+              {/* DESIGN REVIEW UI */}
               {order.status === OrderStatus.DESIGN_REVIEW && (
                  <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl overflow-hidden shadow-lg shadow-amber-100">
                     <div className="p-6 md:p-8 text-center border-b border-amber-100 bg-amber-50/50">
@@ -407,7 +406,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                  </div>
               )}
 
-              {/* 3. DESIGN REJECTED (Feedback Loop) */}
+              {/* DESIGN REJECTED (Feedback Loop) */}
               {order.status === OrderStatus.DESIGN_REJECTED && (
                   <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex flex-col items-center text-center">
                        <div className="bg-red-100 p-3 rounded-full mb-3 text-red-600">
@@ -419,7 +418,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
               )}
 
-              {/* 4. PRODUCTION STATUS */}
+              {/* PRODUCTION STATUS */}
               {[OrderStatus.READY_TO_EMBROIDER, OrderStatus.IN_PROGRESS, OrderStatus.READY_FOR_DISPATCH].includes(order.status) && (
                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 flex items-center gap-4">
                        <div className="bg-blue-100 p-3 rounded-full text-blue-600 hidden sm:block">
@@ -432,7 +431,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                    </div>
               )}
 
-              {/* 5. DISPATCHED (SUCCESS & EVIDENCE) */}
+              {/* DISPATCHED (SUCCESS & EVIDENCE) */}
               {order.status === OrderStatus.DISPATCHED && (
                 <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 md:p-8 text-center mb-8">
                     <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600 shadow-sm">
@@ -475,7 +474,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                 </div>
               )}
 
-              {/* RENDER BUNDLES (SUPER PACKS) */}
+              {/* RENDER BUNDLES (SUPER PACKS) - WITH ENHANCED SYNC VISUALIZATION */}
               {Object.entries(bundles).map(([groupId, items]) => (
                   <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-6 md:p-8">
                       <div className="flex items-center gap-3 mb-6">
@@ -483,63 +482,92 @@ const ClientView: React.FC<ClientViewProps> = ({
                               <Box className="w-6 h-6" />
                           </div>
                           <div>
-                              {/* DYNAMIC TITLE FROM DB - FIRST ITEM REPRESENTING THE PACK */}
-                              <h4 className="font-bold text-xl text-gray-900">{items[0].productName}</h4>
-                              <p className="text-xs text-gray-500">Configuración unificada: La foto se aplica a todo el pack.</p>
+                              <h4 className="font-bold text-xl text-gray-900 flex items-center gap-2">
+                                  {items[0].productName}
+                                  <span className="bg-brand-600 text-white text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Pack Sincronizado</span>
+                              </h4>
+                              <p className="text-xs text-gray-500 mt-1">Configuración inteligente: Las fotos se replican automáticamente a todos los productos del pack.</p>
                           </div>
                       </div>
 
-                      {/* We take the first item as the "Master" for the photo slots, but render positions for all */}
-                      <div className="grid lg:grid-cols-2 gap-8">
+                      {/* Iterate primarily over the slots of the first item (Master) */}
+                      <div className="space-y-8">
                           {items[0].customizations.map((slot, idx) => (
-                              <div key={slot.id} className="col-span-1 lg:col-span-2 space-y-4">
-                                  {/* MASTER SLOT (Photo applies to all) */}
-                                  <PetSlotCard 
-                                    slot={slot} 
-                                    index={idx} 
-                                    item={items[0]} 
-                                    order={order} 
-                                    isLocked={isLocked}
-                                    isPrimaryInBundle={true}
-                                  />
+                              <div key={slot.id} className="relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                  {/* MASTER SLOT (Photo applies to this index across all items) */}
+                                  <h5 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 border-b border-gray-50 pb-2">
+                                      <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-mono">{idx + 1}</span>
+                                      Mascota #{idx + 1} (Aplica a todo el pack)
+                                  </h5>
 
-                                  {/* SECONDARY ITEM POSITIONS (No Photo upload, just position) */}
-                                  {items.slice(1).map(siblingItem => (
-                                      <div key={siblingItem.id} className="ml-8 md:ml-12 pl-6 border-l-2 border-brand-100">
-                                          <div className="flex items-center gap-2 mb-2">
-                                              <span className="text-xs font-bold text-gray-400 uppercase">Aplicar también en:</span>
-                                              {/* SHOW PRODUCT NAME + ATTRIBUTES */}
-                                              <div className="flex items-baseline gap-2">
-                                                  <span className="text-sm font-bold text-gray-800">{siblingItem.productName}</span>
-                                                  {(siblingItem.color || siblingItem.size) && (
-                                                      <span className="text-xs text-gray-500 font-mono">
-                                                          {siblingItem.color && `• ${siblingItem.color} `}
-                                                          {siblingItem.size && `[${siblingItem.size}]`}
-                                                      </span>
+                                  <div className="grid lg:grid-cols-5 gap-8">
+                                      {/* PRIMARY UPLOAD CARD (Takes up 3 cols) */}
+                                      <div className="lg:col-span-3">
+                                          <PetSlotCard 
+                                            slot={slot} 
+                                            index={idx} 
+                                            item={items[0]} 
+                                            order={order} 
+                                            isLocked={isLocked}
+                                            isPrimaryInBundle={true}
+                                          />
+                                      </div>
+
+                                      {/* SECONDARY ITEM POSITIONS (Take up 2 cols) */}
+                                      <div className="lg:col-span-2 space-y-4">
+                                          {items.slice(1).map(siblingItem => {
+                                              // Ensure sibling has this slot index
+                                              const siblingSlot = siblingItem.customizations[idx];
+                                              if (!siblingSlot) return null;
+
+                                              return (
+                                              <div key={siblingItem.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200 relative overflow-hidden">
+                                                  {/* VISUAL CONNECTION LINE (Conceptual) */}
+                                                  <div className="absolute top-0 left-0 w-1 h-full bg-brand-200"></div>
+
+                                                  <div className="flex items-center gap-2 mb-3">
+                                                      <div className="p-1.5 bg-white rounded border border-gray-200 shadow-sm">
+                                                          <Link className="w-3 h-3 text-brand-500" />
+                                                      </div>
+                                                      <div className="flex-1 min-w-0">
+                                                          <span className="text-xs font-bold text-gray-500 uppercase block tracking-wider">Sincronizado en:</span>
+                                                          <span className="text-sm font-bold text-gray-800 truncate block">{siblingItem.productName}</span>
+                                                      </div>
+                                                  </div>
+
+                                                  {/* SYNC STATUS */}
+                                                  {slot.photoUrl ? (
+                                                      <div className="flex items-center gap-2 mb-3 bg-brand-100/50 p-2 rounded text-brand-800 text-xs">
+                                                          <Check className="w-3 h-3" />
+                                                          <span>Usando foto de <strong>{slot.petName || `Mascota ${idx + 1}`}</strong></span>
+                                                      </div>
+                                                  ) : (
+                                                      <div className="flex items-center gap-2 mb-3 bg-gray-100 p-2 rounded text-gray-400 text-xs italic">
+                                                          <ArrowRight className="w-3 h-3" />
+                                                          Esperando foto principal...
+                                                      </div>
                                                   )}
-                                              </div>
-                                          </div>
-                                          {siblingItem.customizations[idx] && (
-                                              <div className="bg-white p-4 rounded-xl border border-gray-200">
-                                                  <label className="text-xs font-bold text-gray-500 mb-2 block">Ubicación</label>
+
+                                                  <label className="text-[10px] font-bold text-gray-400 mb-1 block uppercase">Ubicación</label>
                                                   <GarmentVisualizer 
                                                         productName={siblingItem.productName}
                                                         sku={siblingItem.sku}
-                                                        selected={siblingItem.customizations[idx].position} 
-                                                        onSelect={(pos) => !isLocked && onUpdateSlot(order.id, siblingItem.id, siblingItem.customizations[idx].id, { position: pos })}
+                                                        selected={siblingSlot.position} 
+                                                        onSelect={(pos) => !isLocked && onUpdateSlot(order.id, siblingItem.id, siblingSlot.id, { position: pos })}
                                                         readOnly={isLocked}
                                                   />
                                               </div>
-                                          )}
+                                              );
+                                          })}
                                       </div>
-                                  ))}
+                                  </div>
                               </div>
                           ))}
                       </div>
                   </div>
               ))}
 
-              {/* RENDER SINGLES */}
+              {/* RENDER SINGLES (Existing Logic) */}
               {singles.map(item => (
                 <div key={item.id} className="border-b last:border-0 border-gray-100 pb-12 last:pb-0">
                   <div className="flex items-start gap-4 mb-8">
@@ -548,7 +576,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                      </div>
                      <div className="flex-1">
                         <h4 className="font-bold text-lg text-gray-900 leading-tight">{item.productName}</h4>
-                        {/* PRODUCT ATTRIBUTES BADGES */}
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 text-xs font-mono border border-gray-200">{item.sku}</span>
                            {item.color && (
@@ -566,7 +593,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
 
                   <div className="grid lg:grid-cols-2 gap-8 mb-8">
-                    {/* PET SLOTS */}
                     {item.customizations.map((slot, index) => (
                       <PetSlotCard 
                         key={slot.id}
@@ -579,8 +605,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                     ))}
                   </div>
 
-                  {/* SLEEVE CONFIGURATION SECTION (Shared Logic) */}
-                  {/* Robust case-insensitive check for excluded items */}
+                  {/* SLEEVE CONFIGURATION SECTION */}
                   {totalSleeveCredits > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
                       <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
                           <div className="flex justify-between items-start mb-4">
@@ -625,7 +650,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                           )}
                       </div>
                   )}
-
                 </div>
               ))}
             </div>
