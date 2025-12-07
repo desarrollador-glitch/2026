@@ -483,7 +483,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                               <Box className="w-6 h-6" />
                           </div>
                           <div>
-                              <h4 className="font-bold text-xl text-gray-900">Super Pack Malcriados</h4>
+                              {/* DYNAMIC TITLE FROM DB - FIRST ITEM REPRESENTING THE PACK */}
+                              <h4 className="font-bold text-xl text-gray-900">{items[0].productName}</h4>
                               <p className="text-xs text-gray-500">Configuración unificada: La foto se aplica a todo el pack.</p>
                           </div>
                       </div>
@@ -507,7 +508,16 @@ const ClientView: React.FC<ClientViewProps> = ({
                                       <div key={siblingItem.id} className="ml-8 md:ml-12 pl-6 border-l-2 border-brand-100">
                                           <div className="flex items-center gap-2 mb-2">
                                               <span className="text-xs font-bold text-gray-400 uppercase">Aplicar también en:</span>
-                                              <span className="text-sm font-bold text-gray-800">{siblingItem.productName}</span>
+                                              {/* SHOW PRODUCT NAME + ATTRIBUTES */}
+                                              <div className="flex items-baseline gap-2">
+                                                  <span className="text-sm font-bold text-gray-800">{siblingItem.productName}</span>
+                                                  {(siblingItem.color || siblingItem.size) && (
+                                                      <span className="text-xs text-gray-500 font-mono">
+                                                          {siblingItem.color && `• ${siblingItem.color} `}
+                                                          {siblingItem.size && `[${siblingItem.size}]`}
+                                                      </span>
+                                                  )}
+                                              </div>
                                           </div>
                                           {siblingItem.customizations[idx] && (
                                               <div className="bg-white p-4 rounded-xl border border-gray-200">
@@ -538,8 +548,19 @@ const ClientView: React.FC<ClientViewProps> = ({
                      </div>
                      <div className="flex-1">
                         <h4 className="font-bold text-lg text-gray-900 leading-tight">{item.productName}</h4>
-                        <div className="flex items-center gap-3 text-xs text-gray-500 font-mono mt-1">
-                           <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 font-semibold">{item.sku}</span>
+                        {/* PRODUCT ATTRIBUTES BADGES */}
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                           <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600 text-xs font-mono border border-gray-200">{item.sku}</span>
+                           {item.color && (
+                               <span className="bg-white px-2 py-0.5 rounded text-gray-600 text-xs font-bold border border-gray-200 shadow-sm flex items-center gap-1">
+                                   <span className="w-2 h-2 rounded-full bg-gray-400"></span> {item.color}
+                               </span>
+                           )}
+                           {item.size && (
+                               <span className="bg-white px-2 py-0.5 rounded text-gray-600 text-xs font-bold border border-gray-200 shadow-sm">
+                                   Talla: {item.size}
+                               </span>
+                           )}
                         </div>
                      </div>
                   </div>

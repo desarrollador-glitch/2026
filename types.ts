@@ -63,6 +63,12 @@ export interface OrderItem {
   productName: string; // e.g. "Hoodie con 2 regalones"
   quantity: number;
   price?: number; // Analytics (DB: unit_price)
+  
+  // Product Attributes
+  garmentType?: string; // Mapped to DB 'prenda'
+  color?: string;       // Mapped to DB 'color'
+  size?: string;        // Mapped to DB 'talla'
+
   customizationType?: 'PORTRAIT' | 'TEXT_ONLY'; // Mapped to DB column 'customization_type'
   customizations: EmbroiderySlot[]; // If product has 2 pets, this array has 2 entries
   
