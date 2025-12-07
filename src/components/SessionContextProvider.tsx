@@ -10,13 +10,14 @@ interface SessionContextType {
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 // MOCK SESSION PARA DESARROLLO
+// Importante: El ID debe ser un UUID válido para que Postgres no rechace las inserciones
 const MOCK_SESSION: Session = {
   access_token: 'mock-token',
   refresh_token: 'mock-refresh-token',
   expires_in: 3600,
   token_type: 'bearer',
   user: {
-    id: 'mock-user-id',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', // UUID válido generado aleatoriamente
     aud: 'authenticated',
     role: 'authenticated',
     email: 'dev@malcriados.app',
