@@ -1,4 +1,3 @@
-
 export enum UserRole {
   CLIENT = 'CLIENTE',
   DESIGNER = 'DISEÑADOR',
@@ -64,6 +63,7 @@ export interface OrderItem {
   productName: string; // e.g. "Hoodie con 2 regalones"
   quantity: number;
   price?: number; // Analytics (DB: unit_price)
+  customizationType?: 'PORTRAIT' | 'TEXT_ONLY'; // Mapped to DB column 'customization_type'
   customizations: EmbroiderySlot[]; // If product has 2 pets, this array has 2 entries
   
   // Optional Sleeve Configuration (If assigned)

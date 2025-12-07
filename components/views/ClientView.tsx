@@ -32,8 +32,13 @@ const ClientView: React.FC<ClientViewProps> = ({
       o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // HELPER: Detect sleeve item robustly
-  const isSleeveItem = (sku: string) => sku && sku.toLowerCase() === 'extra-manga';
+  // HELPER: Detect sleeve item robustly using DB Type or SKU fallback
+  const isSleeveItem = (item: OrderItem) => {
+      // 1. Priority check: Database Type
+      if (item.customizationType === 'TEXT_ONLY') return true;
+      // 2. Fallback check: Legacy SKU
+      return item.sku && item.sku.toLowerCase() === 'extra-manga';
+  };
 
   // HELPER: GROUP ITEMS BY GROUP_ID
   const groupItems = (items: OrderItem[]) => {
@@ -41,7 +46,7 @@ const ClientView: React.FC<ClientViewProps> = ({
       const singles: OrderItem[] = [];
 
       items.forEach(item => {
-          if (isSleeveItem(item.sku)) return; // Skip logic items (Credits)
+          if (isSleeveItem(item)) return; // Skip logic items (Credits)
           if (item.groupId) {
               if (!bundles[item.groupId]) bundles[item.groupId] = [];
               bundles[item.groupId].push(item);
@@ -271,8 +276,8 @@ const ClientView: React.FC<ClientViewProps> = ({
             ].includes(order.status);
 
             // Sleeve Credits Logic (GLOBAL FOR ORDER)
-            // Use case-insensitive check
-            const sleeveItems = order.items.filter(i => isSleeveItem(i.sku));
+            // Use robust check passing the full item object
+            const sleeveItems = order.items.filter(i => isSleeveItem(i));
             const totalSleeveCredits = sleeveItems.reduce((acc, item) => acc + item.quantity, 0);
             const assignedSleeves = order.items.filter(i => i.sleeve).length;
             const remainingSleeves = totalSleeveCredits - assignedSleeves;
@@ -298,7 +303,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                         <span>{new Date(order.orderDate).toLocaleDateString()}</span>
                         <span>•</span>
                         {/* Exclude sleeve items from count visually */}
-                        <span>{order.items.filter(i => !isSleeveItem(i.sku)).length} productos</span>
+                        <span>{order.items.filter(i => !isSleeveItem(i)).length} productos</span>
                       </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">

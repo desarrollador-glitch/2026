@@ -49,6 +49,7 @@ export const useOrderSystem = () => {
                 productName: i.product_name,
                 quantity: i.quantity,
                 price: i.unit_price,
+                customizationType: i.customization_type, // MAPPED FROM DB
                 sleeve: i.sleeve_config as SleeveConfig,
                 customizations: slotsByItem[i.id] || []
             });
