@@ -2,21 +2,26 @@ import React, { useState } from 'react';
 import { Order, OrderStatus, UserRole } from '../../types';
 import { STAFF_MEMBERS, SLEEVE_FONTS, SLEEVE_ICONS } from '../../constants';
 import GarmentVisualizer from '../GarmentVisualizer';
-import { Search, Eye, Download, MessageSquare, Upload, ImageIcon, FileCode, FileText, CheckCircle, Trash2, Send, Sparkles, Tag } from 'lucide-react';
+import { Search, Eye, Download, MessageSquare, Upload, ImageIcon, FileCode, FileText, CheckCircle, Trash2, Send, Sparkles, Tag, Loader2 } from 'lucide-react';
 
 interface DesignerViewProps {
   orders: Order[];
-  onSubmitDesign: (orderId: string, assets: { image: string, technicalSheet: string, machineFile: string }) => void;
+  onSubmitDesign: (orderId: string, assets: { imageFile: File, technicalSheetFile: File, machineFileFile: File }) => void;
 }
 
 const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({});
   
   // Local state for drafts
+  // We keep preview strings for UI and Files for submission
   const [designerDrafts, setDesignerDrafts] = useState<Record<string, {
-      image?: string;
-      technicalSheet?: string;
-      machineFile?: string;
+      imagePreview?: string;
+      technicalSheetPreview?: string;
+      machineFilePreview?: string;
+      imageFile?: File;
+      technicalSheetFile?: File;
+      machineFileFile?: File;
   }>>({});
 
   const handleDraftFile = (file: File, orderId: string, field: 'image' | 'technicalSheet' | 'machineFile') => {
@@ -26,7 +31,11 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
           const base64 = reader.result as string;
           setDesignerDrafts(prev => ({
               ...prev,
-              [orderId]: { ...prev[orderId], [field]: base64 }
+              [orderId]: { 
+                  ...prev[orderId], 
+                  [`${field}Preview`]: base64,
+                  [`${field}File`]: file
+              }
           }));
       };
   };
@@ -34,8 +43,31 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
   const clearDraftFile = (orderId: string, field: 'image' | 'technicalSheet' | 'machineFile') => {
       setDesignerDrafts(prev => ({
           ...prev,
-          [orderId]: { ...prev[orderId], [field]: undefined }
+          [orderId]: { 
+              ...prev[orderId], 
+              [`${field}Preview`]: undefined,
+              [`${field}File`]: undefined
+          }
       }));
+  };
+
+  const handleSubmit = async (orderId: string, draft: any) => {
+      if (!draft.imageFile || !draft.technicalSheetFile || !draft.machineFileFile) return;
+      
+      setIsSubmitting(prev => ({ ...prev, [orderId]: true }));
+      try {
+          await onSubmitDesign(orderId, {
+              imageFile: draft.imageFile,
+              technicalSheetFile: draft.technicalSheetFile,
+              machineFileFile: draft.machineFileFile
+          });
+          // Clear draft on success
+          setDesignerDrafts(prev => { const n = {...prev}; delete n[orderId]; return n; });
+      } catch (error) {
+          console.error("Error submitting design:", error);
+      } finally {
+          setIsSubmitting(prev => ({ ...prev, [orderId]: false }));
+      }
   };
 
   const activeDrafts = orders.filter(o => [
@@ -74,7 +106,8 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
        <div className="grid gap-8">
            {activeDrafts.map(order => {
                const draft = designerDrafts[order.id] || {};
-               const isReadyToSubmit = draft.image && draft.machineFile && draft.technicalSheet;
+               const isReadyToSubmit = draft.imageFile && draft.machineFileFile && draft.technicalSheetFile;
+               const submitting = isSubmitting[order.id];
 
                return (
                <div key={order.id} className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
@@ -174,24 +207,21 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                            </div>
                        ))}
                        
-                       {/* UPLOAD WORKSPACE (Unchanged) */}
-                       {/* ... */}
                        <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-6">
-                           {/* ... */}
                            <h4 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
                                <Upload className="w-4 h-4"/> Centro de Carga de Producción
                            </h4>
                            
                            <div className="grid md:grid-cols-3 gap-4">
                                {/* 1. VISUAL DESIGN */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.image ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.imagePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">1. Visual (Cliente)</span>
-                                       {draft.image && <CheckCircle className="w-4 h-4 text-green-500"/>}
+                                       {draft.imagePreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
                                    </div>
-                                   {draft.image ? (
+                                   {draft.imagePreview ? (
                                        <div className="relative group">
-                                           <img src={draft.image} className="w-full h-32 object-contain rounded bg-white border border-gray-100" />
+                                           <img src={draft.imagePreview} className="w-full h-32 object-contain rounded bg-white border border-gray-100" />
                                            <button onClick={() => clearDraftFile(order.id, 'image')} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded hover:bg-red-600"><Trash2 className="w-3 h-3"/></button>
                                        </div>
                                    ) : (
@@ -204,12 +234,12 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                </div>
 
                                {/* 2. MACHINE FILE */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.machineFile ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.machineFilePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">2. Archivo Máquina</span>
-                                       {draft.machineFile && <CheckCircle className="w-4 h-4 text-green-500"/>}
+                                       {draft.machineFilePreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
                                    </div>
-                                   {draft.machineFile ? (
+                                   {draft.machineFilePreview ? (
                                        <div className="h-32 flex flex-col items-center justify-center bg-white border border-gray-100 rounded relative">
                                             <FileCode className="w-8 h-8 text-gray-700 mb-2"/>
                                             <span className="text-xs font-mono text-gray-500">Cargado</span>
@@ -225,12 +255,12 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                </div>
 
                                {/* 3. TECHNICAL SHEET */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.technicalSheet ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.technicalSheetPreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">3. Ficha Colores</span>
-                                       {draft.technicalSheet && <CheckCircle className="w-4 h-4 text-green-500"/>}
+                                       {draft.technicalSheetPreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
                                    </div>
-                                   {draft.technicalSheet ? (
+                                   {draft.technicalSheetPreview ? (
                                        <div className="h-32 flex flex-col items-center justify-center bg-white border border-gray-100 rounded relative">
                                             <FileText className="w-8 h-8 text-gray-700 mb-2"/>
                                             <span className="text-xs font-mono text-gray-500">Cargado</span>
@@ -248,14 +278,11 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
 
                            <div className="mt-6 flex justify-end">
                                <button 
-                                onClick={() => {
-                                    onSubmitDesign(order.id, draft as any);
-                                    setDesignerDrafts(prev => { const n = {...prev}; delete n[order.id]; return n; });
-                                }}
-                                disabled={!isReadyToSubmit}
+                                onClick={() => handleSubmit(order.id, draft)}
+                                disabled={!isReadyToSubmit || submitting}
                                 className="px-6 py-3 bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-200 transition-all hover:scale-105"
                                >
-                                   <Send className="w-4 h-4" />
+                                   {submitting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4" />}
                                    {order.status === OrderStatus.DESIGN_REVIEW ? 'Actualizar Versión' : 'Enviar a Revisión'}
                                </button>
                            </div>

@@ -133,7 +133,6 @@ export const useOrderSystem = () => {
             }
 
             // --- PASO CRÍTICO: GUARDAR EN DB INMEDIATAMENTE ---
-            // Esto asegura que la foto aparezca en el frontend aunque la IA falle después.
             const { error: initialDbError } = await supabase
                 .from('embroidery_slots')
                 .update({
@@ -145,7 +144,7 @@ export const useOrderSystem = () => {
 
             if (initialDbError) throw initialDbError;
 
-            // Refrescar UI inmediatamente para que el usuario vea la foto cargando
+            // Refrescar UI inmediatamente
             queryClient.invalidateQueries({ queryKey: ['orders'] });
 
             // 2. Convert to Base64 for AI Analysis
@@ -156,11 +155,11 @@ export const useOrderSystem = () => {
             });
             const base64 = await base64Promise;
 
-            // 3. Analyze with Gemini (En un bloque try/catch aislado)
+            // 3. Analyze with Gemini
             try {
                 const aiResult = await analyzeImageQuality(base64);
 
-                // 4. Update DB with Result (Solo si la IA responde)
+                // 4. Update DB with Result
                 const status = aiResult.approved ? 'APPROVED' : 'REJECTED';
                 
                 const { error: finalDbError } = await supabase
@@ -181,9 +180,6 @@ export const useOrderSystem = () => {
 
             } catch (aiError: any) {
                 console.error("AI Service Error (Non-blocking):", aiError);
-                
-                // Si la IA falla (ej: API Key inválida), marcamos para revisión manual
-                // NO borramos la fotoUrl
                 await supabase
                     .from('embroidery_slots')
                     .update({
@@ -196,7 +192,7 @@ export const useOrderSystem = () => {
             }
 
         } catch (err: any) {
-             throw err; // Re-lanzar errores fatales (subida o DB)
+             throw err;
         } finally {
             setIsProcessingAI(false);
         }
@@ -223,17 +219,42 @@ export const useOrderSystem = () => {
   });
 
   const submitDesignMutation = useMutation({
-    mutationFn: async ({ orderId, assets }: { orderId: string, assets: { image: string, technicalSheet: string, machineFile: string } }) => {
+    mutationFn: async ({ orderId, assets }: { orderId: string, assets: { imageFile: File, technicalSheetFile: File, machineFileFile: File } }) => {
+        
+        // 1. Upload Visual Design
+        const imagePath = `designs/${orderId}/visual_${Date.now()}_${assets.imageFile.name}`;
+        const imageUrl = await uploadFile(assets.imageFile, imagePath);
+        if (!imageUrl) throw new Error("Error al subir la imagen visual. Intenta nuevamente.");
+
+        // 2. Upload Technical Sheet
+        const techPath = `designs/${orderId}/tech_${Date.now()}_${assets.technicalSheetFile.name}`;
+        const techUrl = await uploadFile(assets.technicalSheetFile, techPath);
+        if (!techUrl) throw new Error("Error al subir la ficha técnica.");
+
+        // 3. Upload Machine File
+        const machinePath = `designs/${orderId}/machine_${Date.now()}_${assets.machineFileFile.name}`;
+        const machineUrl = await uploadFile(assets.machineFileFile, machinePath);
+        if (!machineUrl) throw new Error("Error al subir el archivo de máquina.");
+
+        // 4. Update Database
         const { error } = await supabase.from('orders').update({
-                design_image: assets.image,
-                technical_sheet: assets.technicalSheet,
-                machine_file: assets.machineFile,
+                design_image: imageUrl,
+                technical_sheet: techUrl,
+                machine_file: machineUrl,
                 status: 'DESIGN_REVIEW',
                 assigned_designer_id: session?.user?.id 
             }).eq('id', orderId);
+        
         if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Diseño enviado a revisión'); }
+    onSuccess: () => { 
+        queryClient.invalidateQueries({ queryKey: ['orders'] }); 
+        toast.success('Diseño enviado a revisión correctamente'); 
+    },
+    onError: (err: any) => {
+        console.error(err);
+        toast.error(`Error al enviar diseño: ${err.message}`);
+    }
   });
 
   const handleClientReviewMutation = useMutation({
