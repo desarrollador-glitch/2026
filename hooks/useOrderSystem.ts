@@ -112,8 +112,10 @@ export const useOrderSystem = () => {
 
         if (error) throw error;
     },
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
+    // CRITICAL FIX: Ensure we WAIT for the re-fetch to complete before finishing the mutation
+    // This allows the frontend to receive the full pack update (triggered by DB) before enabling UI interactions again.
+    onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: ['orders'] });
         toast.success('Cambios guardados');
     },
     onError: (err: any) => toast.error(`Error: ${err.message}`)
@@ -324,8 +326,8 @@ export const useOrderSystem = () => {
     orders: orders || [],
     isLoading,
     error: error as Error,
-    updateSlot: updateSlotMutation.mutate,
-    updateSleeve: updateSleeveMutation.mutate,
+    updateSlot: updateSlotMutation.mutateAsync, // Expose mutateAsync for awaiting in ClientView
+    updateSleeve: updateSleeveMutation.mutateAsync,
     onInitiateUpload: handleImageUploadMutation.mutate,
     onEditImage: handleEditImageMutation.mutate,
     onSubmitDesign: submitDesignMutation.mutate,

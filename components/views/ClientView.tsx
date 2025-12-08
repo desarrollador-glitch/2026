@@ -10,12 +10,12 @@ import toast from 'react-hot-toast';
 
 interface ClientViewProps {
   orders: Order[];
-  onUpdateSlot: (orderId: string, itemId: string, slotId: string, updates: any) => void;
+  onUpdateSlot: (orderId: string, itemId: string, slotId: string, updates: any) => Promise<void>;
   onInitiateUpload: (file: File, orderId: string, itemId: string, slotId: string) => void;
   onEditImage: (orderId: string, itemId: string, slotId: string, currentImage: string, prompt: string) => void;
   onReviewDesign: (orderId: string, approved: boolean, feedback?: string) => void;
   isProcessing: boolean;
-  onUpdateSleeve?: (orderId: string, itemId: string, config: SleeveConfig | undefined) => void;
+  onUpdateSleeve?: (orderId: string, itemId: string, config: SleeveConfig | undefined) => Promise<void>;
   onFinalizeOrder: (orderId: string) => void;
 }
 
@@ -56,33 +56,17 @@ const ClientView: React.FC<ClientViewProps> = ({
 
   // --- HELPERS FOR LOCAL STATE & SYNC ---
   
-  // Helper to find all sibling slots in a bundle to update them visually in sync
+  // REFACTORIZADO: Eliminada lógica de espejo manual. Ahora solo actualiza el slot objetivo.
+  // La DB (Trigger) se encarga de replicar, y React Query de refrescar la UI.
   const handleLocalSlotChange = (order: Order, item: OrderItem, slotId: string, slotIndex: number, change: Partial<EmbroiderySlot>) => {
-      const newPending = { ...pendingSlotChanges };
-
-      // 1. Update the target slot
-      newPending[slotId] = {
-          orderId: order.id,
-          itemId: item.id,
-          changes: { ...(newPending[slotId]?.changes || {}), ...change }
-      };
-
-      // 2. MAGIC SYNC: If item is part of a pack, update siblings locally too so user sees it instant
-      if (item.groupId) {
-          const siblings = order.items.filter(i => i.groupId === item.groupId && i.id !== item.id);
-          siblings.forEach(sibling => {
-             const siblingSlot = sibling.customizations[slotIndex];
-             if (siblingSlot) {
-                 newPending[siblingSlot.id] = {
-                     orderId: order.id,
-                     itemId: sibling.id,
-                     changes: { ...(newPending[siblingSlot.id]?.changes || {}), ...change }
-                 };
-             }
-          });
-      }
-
-      setPendingSlotChanges(newPending);
+      setPendingSlotChanges(prev => ({
+          ...prev,
+          [slotId]: {
+              orderId: order.id,
+              itemId: item.id,
+              changes: { ...(prev[slotId]?.changes || {}), ...change }
+          }
+      }));
   };
 
   const handleLocalSleeveChange = (orderId: string, itemId: string, config: SleeveConfig | undefined) => {
@@ -105,11 +89,12 @@ const ClientView: React.FC<ClientViewProps> = ({
               return onUpdateSleeve?.(data.orderId, itemId, data.config);
           });
 
+          // Esperamos a que todas las promesas se resuelvan (incluyendo el refetch del servidor)
           await Promise.all([...slotPromises, ...sleevePromises]);
           
           setPendingSlotChanges({});
           setPendingSleeveChanges({});
-          toast.success("¡Cambios guardados correctamente!");
+          toast.success("¡Cambios guardados y sincronizados!");
 
       } catch (e) {
           toast.error("Hubo un error al guardar los cambios.");
