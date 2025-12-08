@@ -20,10 +20,14 @@ export const useOrderSystem = () => {
             supabase.from('orders').select('*').order('created_at', { ascending: false }),
             
             // 2. Items: Stable sort by SKU then ID (Deterministic)
-            supabase.from('order_items').select('*').order('sku', { ascending: true }).order('id', { ascending: true }),
+            supabase.from('order_items').select('*')
+                .order('sku', { ascending: true })
+                .order('id', { ascending: true }),
             
-            // 3. Slots: Stable sort by creation time (Pet 1, Pet 2...)
-            supabase.from('embroidery_slots').select('*').order('created_at', { ascending: true })
+            // 3. Slots: Stable sort by creation time (Pet 1, Pet 2...), ID as tiebreaker
+            supabase.from('embroidery_slots').select('*')
+                .order('created_at', { ascending: true })
+                .order('id', { ascending: true })
         ]);
 
         if (ordersRes.error) throw ordersRes.error;
@@ -63,6 +67,21 @@ export const useOrderSystem = () => {
                 customizationType: i.customization_type, // MAPPED FROM DB
                 sleeve: i.sleeve_config as SleeveConfig,
                 customizations: slotsByItem[i.id] || []
+            });
+        });
+
+        // --- CLIENT-SIDE DETERMINISTIC SORTING (SAFETY LAYER) ---
+        // This ensures items NEVER jump around, even if DB returns different order after update
+        Object.keys(itemsByOrder).forEach(orderId => {
+            itemsByOrder[orderId].sort((a, b) => {
+                // 1. Sort by SKU (Clusters types of products together)
+                const skuA = a.sku || '';
+                const skuB = b.sku || '';
+                const skuComparison = skuA.localeCompare(skuB);
+                if (skuComparison !== 0) return skuComparison;
+                
+                // 2. Sort by ID (Absolute stability)
+                return a.id.localeCompare(b.id);
             });
         });
 
