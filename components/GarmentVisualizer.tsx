@@ -50,7 +50,8 @@ const PositionSelector: React.FC<GarmentVisualizerProps> = ({
     // Interaction Logic
     const clickable = !readOnly && !placements; // Can't click if readonly or in visualization mode
     
-    let baseClasses = "relative flex flex-col items-center justify-center py-3 px-1 rounded-lg border transition-all duration-200";
+    // CHANGED: py-3 -> py-2 md:py-3 to make buttons shorter on mobile
+    let baseClasses = "relative flex flex-col items-center justify-center py-2 md:py-3 px-1 rounded-lg border transition-all duration-200";
     
     // Style Logic
     if (isSelected) {
@@ -97,8 +98,8 @@ const PositionSelector: React.FC<GarmentVisualizerProps> = ({
         </div>
 
         {/* MAIN GRID */}
-        {/* Si es Jockey, usamos un contenedor centrado más angosto */}
-        <div className={`grid ${isCap ? 'grid-cols-1 max-w-[120px] mx-auto' : 'grid-cols-5'} gap-2 mb-4`}>
+        {/* CHANGED: gap-2 -> gap-1 md:gap-2 for tighter spacing on mobile */}
+        <div className={`grid ${isCap ? 'grid-cols-1 max-w-[120px] mx-auto' : 'grid-cols-5'} gap-1 md:gap-2 mb-4`}>
             {POSITIONS.map(renderCell)}
         </div>
         

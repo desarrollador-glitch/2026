@@ -214,7 +214,8 @@ const ClientView: React.FC<ClientViewProps> = ({
       const isPendingSave = !!pending;
 
       return (
-      <div key={slot.id} className={`border rounded-2xl p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
+      // CHANGED: p-5 -> p-4 md:p-5
+      <div key={slot.id} className={`border rounded-2xl p-4 md:p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
          
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
             <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -226,16 +227,18 @@ const ClientView: React.FC<ClientViewProps> = ({
             {slot.status === 'ANALYZING' && <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-blue-100 animate-pulse"><Sparkles className="w-3 h-3"/> Analizando...</span>}
          </div>
 
-         <div className="flex flex-col sm:flex-row gap-6">
+         {/* CHANGED: gap-6 -> gap-4 md:gap-6 */}
+         <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
             {isPrimaryInBundle && (
-            <div className="w-full sm:w-40 flex-shrink-0 flex flex-col gap-2">
+            // CHANGED: w-full sm:w-40 -> w-32 md:w-40 mx-auto sm:mx-0. This prevents massive images on mobile.
+            <div className="w-32 md:w-40 mx-auto sm:mx-0 flex-shrink-0 flex flex-col gap-2">
                 <div className={`aspect-square rounded-xl overflow-hidden relative border group shadow-inner ${isLocked ? 'bg-gray-100 border-gray-200' : 'bg-gray-100 border-gray-200'}`}>
                   {slot.photoUrl ? (
                     <img src={slot.photoUrl} alt="Pet" className={`w-full h-full object-cover transition-transform duration-500 ${!isLocked && 'group-hover:scale-110'}`} />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
                       <ImageIcon className="w-8 h-8" />
-                      <span className="text-xs text-center px-2">Subir Foto Mascota {index + 1}</span>
+                      <span className="text-xs text-center px-2">Subir Foto</span>
                     </div>
                   )}
                   
@@ -286,7 +289,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                     type="text" 
                     disabled={isLocked}
                     placeholder="Ej: Rocky"
-                    className={`w-full text-sm border-gray-200 rounded-lg py-2.5 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
+                    // CHANGED: py-2.5 -> py-2 for better mobile feel
+                    className={`w-full text-sm border-gray-200 rounded-lg py-2 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
                     value={localName}
                     onChange={(e) => setLocalName(e.target.value)}
                     onBlur={handleBlur} // <--- CLAVE PARA FLUIDEZ
@@ -339,7 +343,8 @@ const ClientView: React.FC<ClientViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-16 z-40 bg-gray-50/95 backdrop-blur py-2">
         <div>
            <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold text-gray-900">Mis Pedidos</h2>
+                {/* CHANGED: text-2xl -> text-lg md:text-2xl */}
+                <h2 className="text-lg md:text-2xl font-bold text-gray-900">Mis Pedidos</h2>
                 
                 {/* STATUS INDICATOR */}
                 <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all duration-300 ${
@@ -355,7 +360,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                     {saveStatus === 'error' && <><CloudOff className="w-3 h-3"/> Error al guardar</>}
                 </div>
            </div>
-           <p className="text-gray-500 text-sm">Gestiona la personalización de tus productos Malcriados</p>
+           <p className="text-gray-500 text-sm hidden md:block">Gestiona la personalización de tus productos Malcriados</p>
         </div>
         <div className="relative">
              <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -396,10 +401,12 @@ const ClientView: React.FC<ClientViewProps> = ({
           <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ring-1 ring-black/5">
             
             {/* ORDER HEADER */}
-            <div className="bg-gray-50/80 backdrop-blur px-6 pt-6 pb-2 border-b border-gray-100">
+            {/* CHANGED: px-6 -> px-4 md:px-6, pt-6 -> pt-4 md:pt-6 */}
+            <div className="bg-gray-50/80 backdrop-blur px-4 pt-4 md:px-6 md:pt-6 pb-2 border-b border-gray-100">
                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
                   <div>
-                      <h3 className="font-bold text-xl text-gray-900 flex items-center gap-2">
+                      {/* CHANGED: text-xl -> text-lg md:text-xl */}
+                      <h3 className="font-bold text-lg md:text-xl text-gray-900 flex items-center gap-2">
                         Orden #{order.id}
                         {isLocked && <Lock className="w-4 h-4 text-gray-400" />}
                       </h3>
@@ -428,7 +435,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                                 }
                             }}
                             disabled={!isReadyToSend}
-                            className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all ${isReadyToSend ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md hover:scale-105 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                            // CHANGED: text-xs -> text-[10px] md:text-xs, padding reduced
+                            className={`px-3 py-2 md:px-4 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-2 transition-all ${isReadyToSend ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md hover:scale-105 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                          >
                             <Send className="w-3 h-3" />
                             {isReadyToSend ? 'Finalizar y Enviar a Diseño' : 'Completa fotos para enviar'}
@@ -441,7 +449,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                </div>
             </div>
 
-            <div className="p-6 md:p-8 space-y-12">
+            {/* CHANGED: p-6 md:p-8 -> p-4 md:p-8 space-y-8 md:space-y-12 */}
+            <div className="p-4 md:p-8 space-y-8 md:space-y-12">
               
               {/* BANNERS */}
               {order.status === OrderStatus.WAITING_FOR_DESIGN && (
@@ -499,7 +508,8 @@ const ClientView: React.FC<ClientViewProps> = ({
 
               {/* RENDER BUNDLES */}
               {Object.entries(bundles).map(([groupId, items]) => (
-                  <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-6 md:p-8">
+                  // CHANGED: p-6 md:p-8 -> p-4 md:p-8
+                  <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-4 md:p-8">
                       <div className="flex items-center gap-3 mb-6">
                           <div className="p-3 bg-brand-100 rounded-xl text-brand-700">
                               <Box className="w-6 h-6" />

@@ -81,7 +81,8 @@ const App: React.FC = () => {
         onReset={handleLogout}
       />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* CHANGED: px-4 -> px-3, py-8 -> py-4 md:py-8 to gain space on mobile */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 md:py-8">
 
         {userRole === UserRole.CLIENT && (
             <ClientView
