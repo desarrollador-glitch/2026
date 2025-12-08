@@ -82,9 +82,7 @@ const ClientView: React.FC<ClientViewProps> = ({
 
               await Promise.all([...slotPromises, ...sleevePromises]);
               
-              // Clear ONLY the saved items from state (in case user typed more during save)
-              // For simplicity in this version, we clear all if successful, assuming rapid typing didn't happen during the exact ms of await.
-              // A more robust solution would remove keys selectively, but this is standard for basic auto-save.
+              // Clear ONLY the saved items from state
               setPendingSlotChanges({});
               setPendingSleeveChanges({});
               
@@ -184,22 +182,40 @@ const ClientView: React.FC<ClientViewProps> = ({
   }> = ({ 
       slot, index, item, order, isLocked, isPrimaryInBundle = true 
   }) => {
+      // --- LOGICA DE ESCRITURA FLUIDA (SAVE ON BLUR) ---
+      // Inicializamos el estado local con el valor pendiente (si existe) o el de la DB
+      const [localName, setLocalName] = useState(pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '');
+
+      // Sincronizamos si la DB cambia externamente (ej: carga inicial o corrección de admin)
+      useEffect(() => {
+          // Solo actualizamos si NO hay un cambio pendiente nuestro
+          if (!pendingSlotChanges[slot.id]?.changes?.petName) {
+               setLocalName(slot.petName || '');
+          }
+      }, [slot.petName, pendingSlotChanges[slot.id]]);
+
       const pending = pendingSlotChanges[slot.id]?.changes;
       
       const displayValues = {
-          petName: pending?.petName !== undefined ? pending.petName : slot.petName,
+          // Usamos localName para el input de texto
           position: pending?.position !== undefined ? pending.position : slot.position,
           includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
       };
 
-      // Only show blue border if actively typing/pending save
+      // Manejador Save-On-Blur
+      const handleBlur = () => {
+          // Solo disparamos el cambio si el texto local es diferente a lo que ya está guardado/pendiente
+          const currentSavedOrPending = pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '';
+          if (localName !== currentSavedOrPending) {
+               handleLocalSlotChange(order, item, slot.id, index, { petName: localName });
+          }
+      };
+
       const isPendingSave = !!pending;
 
       return (
       <div key={slot.id} className={`border rounded-2xl p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
          
-         {/* REMOVED: "Modificado" Badge. Replaced by global status indicator */}
-
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
             <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
                <span className="bg-brand-100 text-brand-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono">{index + 1}</span>
@@ -235,8 +251,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                                 if (e.target.files?.[0]) {
                                     if(saveStatus === 'pending' || saveStatus === 'saving') {
                                         toast("Guardando cambios anteriores antes de subir foto...", { icon: '⏳' });
-                                        // The auto-save will trigger, then UI will refresh. 
-                                        // For now we allow upload but warn.
                                     }
                                     onInitiateUpload(e.target.files[0], order.id, item.id, slot.id);
                                     e.target.value = '';
@@ -273,8 +287,9 @@ const ClientView: React.FC<ClientViewProps> = ({
                     disabled={isLocked}
                     placeholder="Ej: Rocky"
                     className={`w-full text-sm border-gray-200 rounded-lg py-2.5 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
-                    value={displayValues.petName || ''}
-                    onChange={(e) => handleLocalSlotChange(order, item, slot.id, index, { petName: e.target.value })}
+                    value={localName}
+                    onChange={(e) => setLocalName(e.target.value)}
+                    onBlur={handleBlur} // <--- CLAVE PARA FLUIDEZ
                   />
                </div>
                )}
