@@ -16,9 +16,14 @@ export const useOrderSystem = () => {
   const fetchOrders = async (): Promise<Order[]> => {
     try {
         const [ordersRes, itemsRes, slotsRes] = await Promise.all([
+            // 1. Orders: Newest first
             supabase.from('orders').select('*').order('created_at', { ascending: false }),
-            supabase.from('order_items').select('*'),
-            supabase.from('embroidery_slots').select('*')
+            
+            // 2. Items: Stable sort by SKU then ID (Deterministic)
+            supabase.from('order_items').select('*').order('sku', { ascending: true }).order('id', { ascending: true }),
+            
+            // 3. Slots: Stable sort by creation time (Pet 1, Pet 2...)
+            supabase.from('embroidery_slots').select('*').order('created_at', { ascending: true })
         ]);
 
         if (ordersRes.error) throw ordersRes.error;
