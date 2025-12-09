@@ -4,7 +4,7 @@ import StatusBadge from '../StatusBadge';
 import OrderProgress from '../OrderProgress';
 import GarmentVisualizer from '../GarmentVisualizer';
 import SleeveDesigner from '../SleeveDesigner';
-import { Search, Lock, Palette, CheckCircle, XCircle, Sparkles, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Cloud, CloudOff } from 'lucide-react';
+import { Search, Lock, Palette, CheckCircle, XCircle, Sparkles, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Cloud, CloudOff, History, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface ClientViewProps {
@@ -45,7 +45,6 @@ const ClientView: React.FC<ClientViewProps> = ({
   const [pendingSlotChanges, setPendingSlotChanges] = useState<Record<string, PendingSlotChange>>({});
   const [pendingSleeveChanges, setPendingSleeveChanges] = useState<Record<string, PendingSleeveChange>>({});
 
-  // Refs for tracking changes inside useEffect without adding deps
   const pendingSlotsRef = useRef(pendingSlotChanges);
   const pendingSleevesRef = useRef(pendingSleeveChanges);
 
@@ -54,7 +53,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       pendingSleevesRef.current = pendingSleeveChanges;
   }, [pendingSlotChanges, pendingSleeveChanges]);
 
-  // --- AUTO-SAVE LOGIC (DEBOUNCE) ---
   useEffect(() => {
       const hasChanges = Object.keys(pendingSlotChanges).length > 0 || Object.keys(pendingSleeveChanges).length > 0;
       
@@ -62,27 +60,22 @@ const ClientView: React.FC<ClientViewProps> = ({
 
       setSaveStatus('pending');
 
-      // Wait 1.5 seconds of inactivity before saving
       const timer = setTimeout(async () => {
           setSaveStatus('saving');
           try {
-              // Capture current snapshot to save
               const slotsToSave = { ...pendingSlotsRef.current };
               const sleevesToSave = { ...pendingSleevesRef.current };
 
-              // 1. Commit Slot Changes
               const slotPromises = Object.entries(slotsToSave).map(([slotId, data]) => {
                  return onUpdateSlot(data.orderId, data.itemId, slotId, data.changes);
               });
 
-              // 2. Commit Sleeve Changes
               const sleevePromises = Object.entries(sleevesToSave).map(([itemId, data]) => {
                   return onUpdateSleeve?.(data.orderId, itemId, data.config);
               });
 
               await Promise.all([...slotPromises, ...sleevePromises]);
               
-              // Clear ONLY the saved items from state
               setPendingSlotChanges({});
               setPendingSleeveChanges({});
               
@@ -99,14 +92,12 @@ const ClientView: React.FC<ClientViewProps> = ({
       return () => clearTimeout(timer);
   }, [pendingSlotChanges, pendingSleeveChanges, onUpdateSlot, onUpdateSleeve]);
 
-  // --- FILTERING ---
   const filteredOrders = orders.filter(o => 
       o.id.includes(searchTerm) || 
       o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // --- HELPERS FOR LOCAL STATE ---
   const handleLocalSlotChange = (order: Order, item: OrderItem, slotId: string, slotIndex: number, change: Partial<EmbroiderySlot>) => {
       setPendingSlotChanges(prev => ({
           ...prev,
@@ -125,13 +116,11 @@ const ClientView: React.FC<ClientViewProps> = ({
       }));
   };
 
-  // HELPER: Detect sleeve item robustly
   const isSleeveItem = (item: OrderItem) => {
       if (item.customizationType === 'TEXT_ONLY') return true;
       return item.sku && item.sku.toLowerCase() === 'extra-manga';
   };
 
-  // HELPER: GROUP ITEMS
   const groupItems = (items: OrderItem[]) => {
       const bundles: Record<string, OrderItem[]> = {};
       const singles: OrderItem[] = [];
@@ -148,7 +137,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       return { bundles, singles };
   };
 
-  // HELPER: Calculate Real-Time Credits (DB + Pending)
   const calculateSleeveStats = (order: Order) => {
       const totalSleeveCredits = order.items.filter(i => isSleeveItem(i)).reduce((acc, item) => acc + item.quantity, 0);
       
@@ -171,7 +159,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       };
   };
 
-  // SUB-COMPONENT: PET CARD
   const PetSlotCard: React.FC<{ 
       slot: EmbroiderySlot; 
       index: number; 
@@ -182,13 +169,9 @@ const ClientView: React.FC<ClientViewProps> = ({
   }> = ({ 
       slot, index, item, order, isLocked, isPrimaryInBundle = true 
   }) => {
-      // --- LOGICA DE ESCRITURA FLUIDA (SAVE ON BLUR) ---
-      // Inicializamos el estado local con el valor pendiente (si existe) o el de la DB
       const [localName, setLocalName] = useState(pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '');
 
-      // Sincronizamos si la DB cambia externamente (ej: carga inicial o corrección de admin)
       useEffect(() => {
-          // Solo actualizamos si NO hay un cambio pendiente nuestro
           if (!pendingSlotChanges[slot.id]?.changes?.petName) {
                setLocalName(slot.petName || '');
           }
@@ -197,14 +180,11 @@ const ClientView: React.FC<ClientViewProps> = ({
       const pending = pendingSlotChanges[slot.id]?.changes;
       
       const displayValues = {
-          // Usamos localName para el input de texto
           position: pending?.position !== undefined ? pending.position : slot.position,
           includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
       };
 
-      // Manejador Save-On-Blur
       const handleBlur = () => {
-          // Solo disparamos el cambio si el texto local es diferente a lo que ya está guardado/pendiente
           const currentSavedOrPending = pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '';
           if (localName !== currentSavedOrPending) {
                handleLocalSlotChange(order, item, slot.id, index, { petName: localName });
@@ -214,7 +194,6 @@ const ClientView: React.FC<ClientViewProps> = ({
       const isPendingSave = !!pending;
 
       return (
-      // CHANGED: p-5 -> p-4 md:p-5
       <div key={slot.id} className={`border rounded-2xl p-4 md:p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
          
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
@@ -227,10 +206,8 @@ const ClientView: React.FC<ClientViewProps> = ({
             {slot.status === 'ANALYZING' && <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-blue-100 animate-pulse"><Sparkles className="w-3 h-3"/> Analizando...</span>}
          </div>
 
-         {/* CHANGED: gap-6 -> gap-4 md:gap-6 */}
          <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
             {isPrimaryInBundle && (
-            // CHANGED: w-full sm:w-40 -> w-32 md:w-40 mx-auto sm:mx-0. This prevents massive images on mobile.
             <div className="w-32 md:w-40 mx-auto sm:mx-0 flex-shrink-0 flex flex-col gap-2">
                 <div className={`aspect-square rounded-xl overflow-hidden relative border group shadow-inner ${isLocked ? 'bg-gray-100 border-gray-200' : 'bg-gray-100 border-gray-200'}`}>
                   {slot.photoUrl ? (
@@ -289,11 +266,10 @@ const ClientView: React.FC<ClientViewProps> = ({
                     type="text" 
                     disabled={isLocked}
                     placeholder="Ej: Rocky"
-                    // CHANGED: py-2.5 -> py-2 for better mobile feel
                     className={`w-full text-sm border-gray-200 rounded-lg py-2 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
                     value={localName}
                     onChange={(e) => setLocalName(e.target.value)}
-                    onBlur={handleBlur} // <--- CLAVE PARA FLUIDEZ
+                    onBlur={handleBlur}
                   />
                </div>
                )}
@@ -339,14 +315,11 @@ const ClientView: React.FC<ClientViewProps> = ({
 
   return (
     <div className="space-y-8 pb-12">
-      {/* HEADER WITH AUTO-SAVE STATUS */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-16 z-40 bg-gray-50/95 backdrop-blur py-2">
         <div>
            <div className="flex items-center gap-3">
-                {/* CHANGED: text-2xl -> text-lg md:text-2xl */}
                 <h2 className="text-lg md:text-2xl font-bold text-gray-900">Mis Pedidos</h2>
                 
-                {/* STATUS INDICATOR */}
                 <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all duration-300 ${
                     saveStatus === 'saving' ? 'bg-blue-50 text-blue-600' : 
                     saveStatus === 'saved' ? 'bg-green-50 text-green-600' :
@@ -374,7 +347,6 @@ const ClientView: React.FC<ClientViewProps> = ({
         </div>
       </div>
 
-      {/* ORDERS LIST */}
       <div className="grid gap-12">
         {filteredOrders.map(order => {
             const isLocked = ![
@@ -387,25 +359,20 @@ const ClientView: React.FC<ClientViewProps> = ({
             const { bundles, singles } = groupItems(order.items);
             const sleeveStats = calculateSleeveStats(order);
 
-            // Check if order is complete
             const isOrderComplete = order.items.every(item => 
                 isSleeveItem(item) || 
                 item.customizations.every(slot => slot.status === 'APPROVED' || slot.status === 'ANALYZING' || (slot.photoUrl)) 
             );
             
-            // Prevent sending if auto-save is pending or saving
             const isSavingInProgress = saveStatus === 'pending' || saveStatus === 'saving';
             const isReadyToSend = isOrderComplete && !isSavingInProgress && !isLocked;
 
             return (
           <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ring-1 ring-black/5">
             
-            {/* ORDER HEADER */}
-            {/* CHANGED: px-6 -> px-4 md:px-6, pt-6 -> pt-4 md:pt-6 */}
             <div className="bg-gray-50/80 backdrop-blur px-4 pt-4 md:px-6 md:pt-6 pb-2 border-b border-gray-100">
                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
                   <div>
-                      {/* CHANGED: text-xl -> text-lg md:text-xl */}
                       <h3 className="font-bold text-lg md:text-xl text-gray-900 flex items-center gap-2">
                         Orden #{order.id}
                         {isLocked && <Lock className="w-4 h-4 text-gray-400" />}
@@ -435,7 +402,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                                 }
                             }}
                             disabled={!isReadyToSend}
-                            // CHANGED: text-xs -> text-[10px] md:text-xs, padding reduced
                             className={`px-3 py-2 md:px-4 rounded-lg font-bold text-[10px] md:text-xs flex items-center gap-2 transition-all ${isReadyToSend ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md hover:scale-105 cursor-pointer' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                          >
                             <Send className="w-3 h-3" />
@@ -449,10 +415,8 @@ const ClientView: React.FC<ClientViewProps> = ({
                </div>
             </div>
 
-            {/* CHANGED: p-6 md:p-8 -> p-4 md:p-8 space-y-8 md:space-y-12 */}
             <div className="p-4 md:p-8 space-y-8 md:space-y-12">
               
-              {/* BANNERS */}
               {order.status === OrderStatus.WAITING_FOR_DESIGN && (
                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 text-center">
                      <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -478,6 +442,35 @@ const ClientView: React.FC<ClientViewProps> = ({
                                 <div className="h-64 flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg">Imagen no disponible</div>
                              )}
                         </div>
+
+                        {/* --- DESIGN HISTORY (VERSIONES ANTERIORES) --- */}
+                        {order.designHistory && order.designHistory.length > 0 && (
+                            <div className="max-w-2xl mx-auto mb-8 text-left bg-white rounded-xl border border-amber-100 p-4">
+                                <h4 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
+                                    <History className="w-4 h-4"/> Historial de Cambios
+                                </h4>
+                                <div className="space-y-3">
+                                    {order.designHistory.map((version, idx) => (
+                                        <div key={idx} className="flex gap-4 p-3 rounded-lg bg-gray-50 border border-gray-100 items-start">
+                                            <div className="w-16 h-16 flex-shrink-0 bg-white rounded border border-gray-200 p-0.5">
+                                                <img src={version.imageUrl} className="w-full h-full object-cover rounded" alt="Versión anterior" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-xs font-bold text-gray-400 uppercase">Versión Anterior</span>
+                                                    <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                                        <Clock className="w-3 h-3"/> {new Date(version.createdAt).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-600 italic">
+                                                    <span className="font-bold text-red-500">Tu corrección:</span> "{version.feedback}"
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {rejectingOrderId === order.id ? (
                             <div className="max-w-md mx-auto bg-white p-6 rounded-xl border border-red-200 shadow-md animate-in fade-in slide-in-from-bottom-4">
@@ -506,9 +499,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                  </div>
               )}
 
-              {/* RENDER BUNDLES */}
               {Object.entries(bundles).map(([groupId, items]) => (
-                  // CHANGED: p-6 md:p-8 -> p-4 md:p-8
                   <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-4 md:p-8">
                       <div className="flex items-center gap-3 mb-6">
                           <div className="p-3 bg-brand-100 rounded-xl text-brand-700">
@@ -566,7 +557,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                           ))}
                       </div>
 
-                      {/* SLEEVE SECTION FOR BUNDLES */}
                       {sleeveStats.total > 0 && items.some(i => !isSleeveItem(i) && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => i.sku.toLowerCase().includes(t.toLowerCase()))) && (
                         <div className="mt-8 pt-8 border-t border-brand-100">
                              <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-4"><Tag className="w-4 h-4 text-brand-500"/> Configuración de Mangas (Pack)</h4>
@@ -606,7 +596,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                   </div>
               ))}
 
-              {/* RENDER SINGLES */}
               {singles.map(item => (
                 <div key={item.id} className="border-b last:border-0 border-gray-100 pb-12 last:pb-0">
                   <div className="flex items-start gap-4 mb-8">
@@ -625,7 +614,6 @@ const ClientView: React.FC<ClientViewProps> = ({
                     ))}
                   </div>
 
-                  {/* SLEEVE FOR SINGLES */}
                   {sleeveStats.total > 0 && !['TSHIRT', 'CAP', 'JOCKEY', 'GORRO'].some(t => item.sku.toLowerCase().includes(t.toLowerCase())) && (
                       <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
                           <div className="flex justify-between items-start mb-4">

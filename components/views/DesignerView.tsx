@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Order, OrderStatus, UserRole } from '../../types';
 import { STAFF_MEMBERS, SLEEVE_FONTS, SLEEVE_ICONS } from '../../constants';
 import GarmentVisualizer from '../GarmentVisualizer';
-import { Search, Eye, Download, MessageSquare, Upload, ImageIcon, FileCode, FileText, CheckCircle, Trash2, Send, Sparkles, Tag, Loader2 } from 'lucide-react';
+import { Search, Eye, Download, MessageSquare, Upload, ImageIcon, FileCode, FileText, CheckCircle, Trash2, Send, Sparkles, Tag, Loader2, AlertCircle } from 'lucide-react';
 
 interface DesignerViewProps {
   orders: Order[];
@@ -13,8 +13,6 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
   const [searchTerm, setSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState<Record<string, boolean>>({});
   
-  // Local state for drafts
-  // We keep preview strings for UI and Files for submission
   const [designerDrafts, setDesignerDrafts] = useState<Record<string, {
       imagePreview?: string;
       technicalSheetPreview?: string;
@@ -61,7 +59,6 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
               technicalSheetFile: draft.technicalSheetFile,
               machineFileFile: draft.machineFileFile
           });
-          // Clear draft on success
           setDesignerDrafts(prev => { const n = {...prev}; delete n[orderId]; return n; });
       } catch (error) {
           console.error("Error submitting design:", error);
@@ -111,12 +108,14 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
 
                return (
                <div key={order.id} className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-                   <div className="bg-gray-50 px-8 py-4 border-b border-gray-200 flex justify-between items-center">
+                   <div className={`px-8 py-4 border-b border-gray-200 flex justify-between items-center ${order.status === OrderStatus.DESIGN_REJECTED ? 'bg-red-50' : 'bg-gray-50'}`}>
                        <div>
                            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
                                Orden #{order.id}
                                {order.status === OrderStatus.DESIGN_REJECTED && (
-                                   <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold border border-red-200">Rechazado - Ver Feedback</span>
+                                   <span className="bg-red-600 text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm animate-pulse">
+                                       <AlertCircle className="w-3 h-3"/> CORRECCIONES REQUERIDAS
+                                   </span>
                                )}
                                {order.status === OrderStatus.DESIGN_REVIEW && (
                                    <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-bold border border-amber-200 flex items-center gap-1">
@@ -127,6 +126,29 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                            <p className="text-sm text-gray-500">{order.customerName}</p>
                        </div>
                    </div>
+
+                   {/* REJECTION FEEDBACK PANEL */}
+                   {order.status === OrderStatus.DESIGN_REJECTED && order.clientFeedback && (
+                        <div className="mx-8 mt-8 bg-red-50 border border-red-200 rounded-xl p-6 flex flex-col md:flex-row gap-6 animate-in slide-in-from-top-2">
+                             <div className="flex-1">
+                                 <h4 className="text-red-800 font-bold mb-2 flex items-center gap-2">
+                                     <MessageSquare className="w-5 h-5"/> Feedback del Cliente:
+                                 </h4>
+                                 <p className="text-gray-800 italic bg-white p-4 rounded-lg border border-red-100 shadow-sm text-lg">
+                                     "{order.clientFeedback}"
+                                 </p>
+                                 <p className="text-xs text-red-600 mt-2 font-semibold">
+                                     * Sube una nueva versión corregida abajo para enviarla de nuevo.
+                                 </p>
+                             </div>
+                             {order.designImage && (
+                                 <div className="w-full md:w-48 flex-shrink-0">
+                                     <p className="text-[10px] uppercase font-bold text-red-400 mb-1">Versión Rechazada:</p>
+                                     <img src={order.designImage} className="w-full h-auto rounded-lg border border-red-200 opacity-75 hover:opacity-100 transition-opacity" alt="Diseño Rechazado" />
+                                 </div>
+                             )}
+                        </div>
+                   )}
 
                    <div className="p-8 space-y-8 bg-gray-50/30">
                        {/* ORDER ITEMS CONTEXT */}
@@ -149,7 +171,6 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                             placements={item.customizations.filter(c => c.position).map(c => ({ position: c.position!, label: c.petName || 'Mascota' }))} 
                                        />
                                        
-                                       {/* SLEEVE INDICATOR FOR DESIGNER */}
                                        {item.sleeve && (
                                             <div className="mt-4 bg-gray-900 text-white p-3 rounded-lg w-full">
                                                 <div className="flex items-center gap-2 mb-2 border-b border-gray-700 pb-2">
@@ -207,14 +228,15 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                            </div>
                        ))}
                        
-                       <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-6">
+                       <div className={`border-2 border-dashed rounded-2xl p-6 ${order.status === OrderStatus.DESIGN_REJECTED ? 'bg-red-50/30 border-red-200' : 'bg-white border-gray-200'}`}>
                            <h4 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                               <Upload className="w-4 h-4"/> Centro de Carga de Producción
+                               <Upload className="w-4 h-4"/> 
+                               {order.status === OrderStatus.DESIGN_REJECTED ? 'Subir Versión Corregida (V2)' : 'Centro de Carga de Producción'}
                            </h4>
                            
                            <div className="grid md:grid-cols-3 gap-4">
                                {/* 1. VISUAL DESIGN */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.imagePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.imagePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300 bg-white'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">1. Visual (Cliente)</span>
                                        {draft.imagePreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
@@ -234,7 +256,7 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                </div>
 
                                {/* 2. MACHINE FILE */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.machineFilePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.machineFilePreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300 bg-white'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">2. Archivo Máquina</span>
                                        {draft.machineFilePreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
@@ -255,7 +277,7 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                </div>
 
                                {/* 3. TECHNICAL SHEET */}
-                               <div className={`border rounded-xl p-4 transition-all ${draft.technicalSheetPreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300'}`}>
+                               <div className={`border rounded-xl p-4 transition-all ${draft.technicalSheetPreview ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-brand-300 bg-white'}`}>
                                    <div className="flex justify-between items-start mb-2">
                                        <span className="text-xs font-bold text-gray-500 uppercase">3. Ficha Colores</span>
                                        {draft.technicalSheetPreview && <CheckCircle className="w-4 h-4 text-green-500"/>}
@@ -280,10 +302,14 @@ const DesignerView: React.FC<DesignerViewProps> = ({ orders, onSubmitDesign }) =
                                <button 
                                 onClick={() => handleSubmit(order.id, draft)}
                                 disabled={!isReadyToSubmit || submitting}
-                                className="px-6 py-3 bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-200 transition-all hover:scale-105"
+                                className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all hover:scale-105 ${
+                                    isReadyToSubmit 
+                                        ? order.status === OrderStatus.DESIGN_REJECTED ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-200' : 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand-200' 
+                                        : 'bg-gray-300 text-white cursor-not-allowed'
+                                }`}
                                >
                                    {submitting ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4" />}
-                                   {order.status === OrderStatus.DESIGN_REVIEW ? 'Actualizar Versión' : 'Enviar a Revisión'}
+                                   {order.status === OrderStatus.DESIGN_REJECTED ? 'Enviar Corrección' : order.status === OrderStatus.DESIGN_REVIEW ? 'Actualizar Versión' : 'Enviar a Revisión'}
                                </button>
                            </div>
                        </div>

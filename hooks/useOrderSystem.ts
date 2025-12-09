@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Order, OrderStatus, UserRole, EmbroiderySlot, SleeveConfig, OrderItem } from '../types';
+import { Order, OrderStatus, UserRole, EmbroiderySlot, SleeveConfig, OrderItem, DesignVersion } from '../types';
 import { analyzeImageQuality, editImageWithPrompt } from '../services/geminiService';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../src/integrations/supabase/client';
@@ -15,7 +15,7 @@ export const useOrderSystem = () => {
   // --- FETCH ORDERS ---
   const fetchOrders = async (): Promise<Order[]> => {
     try {
-        const [ordersRes, itemsRes, slotsRes] = await Promise.all([
+        const [ordersRes, itemsRes, slotsRes, versionsRes] = await Promise.all([
             // 1. Orders: Newest first
             supabase.from('orders').select('*').order('created_at', { ascending: false }),
             
@@ -27,12 +27,16 @@ export const useOrderSystem = () => {
             // 3. Slots: Stable sort by creation time (Pet 1, Pet 2...), ID as tiebreaker
             supabase.from('embroidery_slots').select('*')
                 .order('created_at', { ascending: true })
-                .order('id', { ascending: true })
+                .order('id', { ascending: true }),
+            
+            // 4. Design Versions (History)
+            supabase.from('design_versions').select('*').order('created_at', { ascending: false })
         ]);
 
         if (ordersRes.error) throw ordersRes.error;
         if (itemsRes.error) throw itemsRes.error;
         if (slotsRes.error) throw slotsRes.error;
+        if (versionsRes.error) throw versionsRes.error;
 
         const slotsByItem: Record<string, EmbroiderySlot[]> = {};
         slotsRes.data.forEach((s: any) => {
@@ -71,17 +75,25 @@ export const useOrderSystem = () => {
         });
 
         // --- CLIENT-SIDE DETERMINISTIC SORTING (SAFETY LAYER) ---
-        // This ensures items NEVER jump around, even if DB returns different order after update
         Object.keys(itemsByOrder).forEach(orderId => {
             itemsByOrder[orderId].sort((a, b) => {
-                // 1. Sort by SKU (Clusters types of products together)
                 const skuA = a.sku || '';
                 const skuB = b.sku || '';
                 const skuComparison = skuA.localeCompare(skuB);
                 if (skuComparison !== 0) return skuComparison;
-                
-                // 2. Sort by ID (Absolute stability)
                 return a.id.localeCompare(b.id);
+            });
+        });
+
+        const versionsByOrder: Record<string, DesignVersion[]> = {};
+        versionsRes.data.forEach((v: any) => {
+            if (!versionsByOrder[v.order_id]) versionsByOrder[v.order_id] = [];
+            versionsByOrder[v.order_id].push({
+                imageUrl: v.image_url,
+                technicalSheet: v.technical_sheet_url,
+                machineFile: v.machine_file_url,
+                feedback: v.feedback,
+                createdAt: v.created_at
             });
         });
 
@@ -96,9 +108,12 @@ export const useOrderSystem = () => {
             totalAmount: o.total_amount,
             assignedDesignerId: o.assigned_designer_id,
             assignedEmbroidererId: o.assigned_embroiderer_id,
+            
             designImage: o.design_image,
             technicalSheet: o.technical_sheet,
             machineFile: o.machine_file,
+            designHistory: versionsByOrder[o.id] || [], // Asignar historial
+
             clientFeedback: o.client_feedback,
             productionIssue: o.production_issue,
             finishedProductPhoto: o.finished_product_photo,
@@ -136,8 +151,6 @@ export const useOrderSystem = () => {
 
         if (error) throw error;
     },
-    // CRITICAL FIX: Ensure we WAIT for the re-fetch to complete before finishing the mutation
-    // This allows the frontend to receive the full pack update (triggered by DB) before enabling UI interactions again.
     onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: ['orders'] });
         toast.success('Cambios guardados');
@@ -149,16 +162,11 @@ export const useOrderSystem = () => {
     mutationFn: async ({ file, orderId, itemId, slotId }: { file: File, orderId: string, itemId: string, slotId: string }) => {
         setIsProcessingAI(true);
         try {
-            // 1. Upload to Storage
             const path = `orders/${orderId}/${slotId}/${Date.now()}_${file.name}`;
             const publicUrl = await uploadFile(file, path);
             
-            // VALIDACIÓN CRÍTICA: Detener si la subida falló (publicUrl es null)
-            if (!publicUrl) {
-                return; // El toast de error ya se mostró en uploadFile
-            }
+            if (!publicUrl) return;
 
-            // --- PASO CRÍTICO: GUARDAR EN DB INMEDIATAMENTE ---
             const { error: initialDbError } = await supabase
                 .from('embroidery_slots')
                 .update({
@@ -170,10 +178,8 @@ export const useOrderSystem = () => {
 
             if (initialDbError) throw initialDbError;
 
-            // Refrescar UI inmediatamente
             queryClient.invalidateQueries({ queryKey: ['orders'] });
 
-            // 2. Convert to Base64 for AI Analysis
             const reader = new FileReader();
             const base64Promise = new Promise<string>((resolve) => {
                 reader.onload = (e) => resolve(e.target?.result as string);
@@ -181,11 +187,9 @@ export const useOrderSystem = () => {
             });
             const base64 = await base64Promise;
 
-            // 3. Analyze with Gemini
             try {
                 const aiResult = await analyzeImageQuality(base64);
 
-                // 4. Update DB with Result
                 const status = aiResult.approved ? 'APPROVED' : 'REJECTED';
                 
                 const { error: finalDbError } = await supabase
@@ -228,7 +232,6 @@ export const useOrderSystem = () => {
     },
     onError: (err: any) => {
         setIsProcessingAI(false);
-        console.error("Upload/DB Fatal Error:", err);
         toast.error(`Error crítico: ${err.message}`);
     }
   });
@@ -247,23 +250,48 @@ export const useOrderSystem = () => {
   const submitDesignMutation = useMutation({
     mutationFn: async ({ orderId, assets }: { orderId: string, assets: { imageFile: File, technicalSheetFile: File, machineFileFile: File } }) => {
         
-        // 1. Upload Visual Design
+        // 1. ARCHIVING STRATEGY: 
+        // Before uploading new files, we check if there's an existing design that was rejected.
+        // We fetch the CURRENT state of the order from DB to get the URLs of the rejected design.
+        const { data: currentOrder, error: fetchError } = await supabase
+            .from('orders')
+            .select('design_image, technical_sheet, machine_file, client_feedback, status')
+            .eq('id', orderId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        // If a design exists (e.g. status was DESIGN_REJECTED), we archive it.
+        if (currentOrder && currentOrder.design_image) {
+            console.log("Archivando versión anterior...");
+            const { error: archiveError } = await supabase.from('design_versions').insert({
+                order_id: orderId,
+                image_url: currentOrder.design_image,
+                technical_sheet_url: currentOrder.technical_sheet,
+                machine_file_url: currentOrder.machine_file,
+                feedback: currentOrder.client_feedback || 'Versión anterior archivada'
+            });
+
+            if (archiveError) {
+                console.error("Error archiving version:", archiveError);
+                // We proceed anyway to not block the workflow, but ideally we should handle this.
+            }
+        }
+
+        // 2. Upload NEW files
         const imagePath = `designs/${orderId}/visual_${Date.now()}_${assets.imageFile.name}`;
         const imageUrl = await uploadFile(assets.imageFile, imagePath);
-        if (!imageUrl) throw new Error("Error al subir la imagen visual. Intenta nuevamente.");
+        if (!imageUrl) throw new Error("Error al subir la imagen visual.");
 
-        // 2. Upload Technical Sheet
         const techPath = `designs/${orderId}/tech_${Date.now()}_${assets.technicalSheetFile.name}`;
         const techUrl = await uploadFile(assets.technicalSheetFile, techPath);
         if (!techUrl) throw new Error("Error al subir la ficha técnica.");
 
-        // 3. Upload Machine File
         const machinePath = `designs/${orderId}/machine_${Date.now()}_${assets.machineFileFile.name}`;
         const machineUrl = await uploadFile(assets.machineFileFile, machinePath);
         if (!machineUrl) throw new Error("Error al subir el archivo de máquina.");
 
-        // 4. Update Database
-        // CORRECCIÓN: Si estamos en modo Dev con el usuario Mock, enviamos NULL
+        // 3. Update Order with NEW files and RESET feedback
         const MOCK_USER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
         const currentUserId = session?.user?.id;
         const designerIdToSave = (currentUserId === MOCK_USER_ID) ? null : currentUserId;
@@ -272,6 +300,7 @@ export const useOrderSystem = () => {
                 design_image: imageUrl,
                 technical_sheet: techUrl,
                 machine_file: machineUrl,
+                client_feedback: null, // Clear feedback for the new version
                 status: 'DESIGN_REVIEW',
                 assigned_designer_id: designerIdToSave
             }).eq('id', orderId);
@@ -350,7 +379,7 @@ export const useOrderSystem = () => {
     orders: orders || [],
     isLoading,
     error: error as Error,
-    updateSlot: updateSlotMutation.mutateAsync, // Expose mutateAsync for awaiting in ClientView
+    updateSlot: updateSlotMutation.mutateAsync,
     updateSleeve: updateSleeveMutation.mutateAsync,
     onInitiateUpload: handleImageUploadMutation.mutate,
     onEditImage: handleEditImageMutation.mutate,
