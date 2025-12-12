@@ -490,9 +490,19 @@ const ClientView: React.FC<ClientViewProps> = ({
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col sm:flex-row justify-center gap-4">
-                                <button onClick={() => setRejectingOrderId(order.id)} className="px-6 py-3 bg-white border-2 border-red-100 text-red-600 font-bold rounded-xl hover:bg-red-50 hover:border-red-200 transition-all flex items-center justify-center gap-2"><XCircle className="w-5 h-5" /> Solicitar Cambios</button>
-                                <button onClick={() => onReviewDesign(order.id, true)} className="px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 hover:scale-105 transition-all flex items-center justify-center gap-2"><CheckCircle className="w-5 h-5" /> ¡Me encanta, Aprobar!</button>
+                            <div className="flex flex-col items-center justify-center gap-3">
+                                <button 
+                                    onClick={() => onReviewDesign(order.id, true)} 
+                                    className="w-full max-w-sm px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 hover:scale-105 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <CheckCircle className="w-5 h-5" /> ¡Me encanta, Aprobar!
+                                </button>
+                                <button 
+                                    onClick={() => setRejectingOrderId(order.id)} 
+                                    className="text-sm text-gray-500 font-bold hover:text-gray-800 hover:underline transition-colors py-2"
+                                >
+                                    Solicitar Cambios
+                                </button>
                             </div>
                         )}
                     </div>
