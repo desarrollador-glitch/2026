@@ -13,8 +13,9 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
-        'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.SUPABASE_ANON_KEY)
+        // Las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY se inyectarán automáticamente
+        // si están definidas en Vercel con el prefijo VITE_.
+        // Eliminamos las definiciones explícitas para evitar posibles conflictos.
       },
       resolve: {
         alias: {
