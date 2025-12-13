@@ -43,13 +43,12 @@ serve(async (req) => {
     }
 
     // 4. Limpieza robusta de Base64
-    // Extrae lo que está después de la coma, o usa el string completo si no hay coma
     const base64Data = image.includes(',') ? image.split(',')[1] : image;
 
-    // 5. Configurar Gemini
+    // 5. Configurar Gemini con el modelo CORRECTO
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
+      model: "gemini-1.5-flash-latest", // <-- MODELO CORREGIDO
       generationConfig: {
         responseMimeType: "application/json"
       }
@@ -78,7 +77,7 @@ serve(async (req) => {
       }
     }
 
-    console.log("📡 Enviando a Gemini...")
+    console.log("📡 Enviando a Gemini con modelo corregido...")
 
     // 7. Generar respuesta
     const result = await model.generateContent([prompt, imagePart])
@@ -90,11 +89,9 @@ serve(async (req) => {
     // 8. Parseo Seguro
     let parsedResult;
     try {
-      // Intentar parseo directo
       parsedResult = JSON.parse(text);
     } catch (e) {
       console.warn("⚠️ JSON directo falló, intentando limpiar markdown...");
-      // Limpiar bloques de código markdown si existen
       const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
       parsedResult = JSON.parse(cleanJson);
     }
@@ -106,7 +103,6 @@ serve(async (req) => {
   } catch (error) {
     console.error("🔥 Error crítico en Edge Function:", error);
     
-    // Devolver error legible al cliente
     return new Response(
       JSON.stringify({ 
         error: error.message || "Error desconocido en el análisis",
