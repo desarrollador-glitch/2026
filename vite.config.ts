@@ -14,12 +14,9 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
       },
       plugins: [dyadComponentTagger(), react()],
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL), // ¡CORREGIDO AQUÍ!
-        'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY) // ¡CORREGIDO AQUÍ!
-      },
+      // Se ha eliminado el bloque 'define'.
+      // Vite expone automáticamente las variables de entorno con prefijo VITE_
+      // a través de import.meta.env si están definidas en el entorno de construcción.
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
