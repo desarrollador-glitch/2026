@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Order, OrderStatus, UserRole, EmbroiderySlot, SleeveConfig, OrderItem, DesignVersion } from '../types';
-import { analyzeImageQuality, editImageWithPrompt } from '../services/geminiService';
+import { analyzeImageQuality } from '../src/services/geminiService';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../src/integrations/supabase/client';
 import { useSession } from '../src/components/SessionContextProvider';
