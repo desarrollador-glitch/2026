@@ -516,7 +516,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                               <Box className="w-6 h-6" />
                           </div>
                           <div>
-                              <h4 className="font-bold text-xl text-gray-900 flex items-center gap-2">
+                              <h4 className="font-bold text-xl text-gray-900 flex items-center flex-wrap gap-2">
                                   {items[0].productName}
                                   <span className="bg-brand-600 text-white text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider">Pack Sincronizado</span>
                               </h4>
