@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.12.0"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,18 +13,28 @@ serve(async (req) => {
   }
 
   try {
-    // 2. Obtener y Validar API Key
+    // 2. Obtener API Key
     const apiKey = Deno.env.get('GEMINI_API_KEY')
     if (!apiKey) {
-      console.error("❌ ERROR: GEMINI_API_KEY no está definida en los secretos de Supabase.")
+      console.error("❌ ERROR: GEMINI_API_KEY no encontrada.")
       return new Response(
-        JSON.stringify({ error: "Configuration Error: API Key missing in server environment." }),
+        JSON.stringify({ error: "Server Configuration Error: API Key missing." }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // 3. Obtener datos del Request
-    const { image } = await req.json()
+    // 3. Parsear Request
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { image } = body;
     if (!image) {
       return new Response(
         JSON.stringify({ error: "No image data provided." }),
@@ -32,57 +42,61 @@ serve(async (req) => {
       )
     }
 
-    // 4. Limpiar Base64 (remover header data:image/...)
-    // La librería espera el base64 limpio o la parte inline data
-    const base64Data = image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '')
+    // 4. Limpieza robusta de Base64
+    // Extrae lo que está después de la coma, o usa el string completo si no hay coma
+    const base64Data = image.includes(',') ? image.split(',')[1] : image;
 
-    // 5. Inicializar Google AI
+    // 5. Configurar Gemini
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash",
       generationConfig: {
-        responseMimeType: "application/json" // Forzar respuesta JSON nativa
+        responseMimeType: "application/json"
       }
     })
 
-    // 6. Preparar Prompt
-    const prompt = `Actúa como experto en control de calidad de bordados. Analiza la imagen.
+    // 6. Prompt Optimizado
+    const prompt = `Analiza esta imagen de bordado de mascota para control de calidad.
     
-    CRITERIOS DE APROBACIÓN:
-    1. Nitidez: Cara enfocada.
-    2. Iluminación: Sin sombras duras que oculten rasgos.
-    3. Integridad: Ninguna parte de la cara cortada u obstruida.
+    CRITERIOS DE APROBACIÓN (Debe cumplir TODOS):
+    1. Nitidez: La imagen es clara y enfocada.
+    2. Iluminación: No es demasiado oscura ni tiene sombras duras en la cara.
+    3. Integridad: La cabeza/cara de la mascota está completa y visible.
     
-    Responde con este esquema JSON:
+    Si la imagen NO es una mascota (perro, gato, etc), recházala.
+
+    Responde ESTRICTAMENTE con este JSON:
     {
       "approved": boolean, 
-      "reason": "Explicación breve y amigable en español dirigida al cliente."
+      "reason": "Si aprobado: 'Calidad excelente'. Si rechazado: Breve explicación amigable en español (ej: 'La foto está un poco borrosa')."
     }`
 
     const imagePart = {
       inlineData: {
         data: base64Data,
-        mimeType: "image/jpeg"
+        mimeType: "image/jpeg" 
       }
     }
 
-    console.log("📡 Enviando a Gemini (SDK)...")
+    console.log("📡 Enviando a Gemini...")
 
-    // 7. Ejecutar Análisis
+    // 7. Generar respuesta
     const result = await model.generateContent([prompt, imagePart])
-    const responseText = result.response.text()
+    const response = await result.response;
+    const text = response.text();
     
-    console.log("✅ Respuesta IA:", responseText)
+    console.log("✅ Respuesta Raw Gemini:", text);
 
-    // 8. Parsear y Devolver
-    // Al usar responseMimeType: "application/json", el texto debería ser JSON válido directamente
-    let parsedResult
+    // 8. Parseo Seguro
+    let parsedResult;
     try {
-        parsedResult = JSON.parse(responseText)
+      // Intentar parseo directo
+      parsedResult = JSON.parse(text);
     } catch (e) {
-        // Fallback por si acaso devuelve markdown
-        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim()
-        parsedResult = JSON.parse(cleanJson)
+      console.warn("⚠️ JSON directo falló, intentando limpiar markdown...");
+      // Limpiar bloques de código markdown si existen
+      const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsedResult = JSON.parse(cleanJson);
     }
 
     return new Response(JSON.stringify(parsedResult), {
@@ -90,9 +104,14 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error("🔥 Error en Edge Function:", error)
+    console.error("🔥 Error crítico en Edge Function:", error);
+    
+    // Devolver error legible al cliente
     return new Response(
-      JSON.stringify({ error: error.message || "Internal Server Error" }),
+      JSON.stringify({ 
+        error: error.message || "Error desconocido en el análisis",
+        details: error.toString() 
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
