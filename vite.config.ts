@@ -6,6 +6,9 @@ import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      // Esta es la línea clave para el despliegue.
+      // Le dice a Vite que la aplicación vivirá en un subdirectorio.
+      base: '/malcriados---embroidery-manager/',
       server: {
         port: 3000,
         host: '0.0.0.0',
