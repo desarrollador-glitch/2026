@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UserRole } from './types';
 import RoleSwitcher from './components/RoleSwitcher';
-import PawModal from './components/PawModal';
 import { useOrderSystem } from './hooks/useOrderSystem';
 import { useSession } from './src/components/SessionContextProvider';
 // import LoginPage from './src/pages/LoginPage'; // DESHABILITADO
@@ -35,22 +34,6 @@ const App: React.FC = () => {
     onUploadEvidence,
     handleLogout,
   } = useOrderSystem();
-
-  const [pendingUpload, setPendingUpload] = useState<{
-      file: File;
-      orderId: string;
-      itemId: string;
-      slotId: string;
-  } | null>(null);
-
-  const confirmUpload = async () => {
-    if (pendingUpload) {
-        await onInitiateUpload(
-            { file: pendingUpload.file, orderId: pendingUpload.orderId, itemId: pendingUpload.itemId, slotId: pendingUpload.slotId }
-        );
-        setPendingUpload(null);
-    }
-  };
 
   if (sessionLoading || isLoading) {
     return (
@@ -90,7 +73,7 @@ const App: React.FC = () => {
                 isProcessing={isLoading}
                 onUpdateSlot={(orderId, itemId, slotId, updates) => updateSlot({ orderId, itemId, slotId, updates })}
                 onUpdateSleeve={(orderId, itemId, config) => updateSleeve({ orderId, itemId, config })}
-                onInitiateUpload={(file, orderId, itemId, slotId) => setPendingUpload({ file, orderId, itemId, slotId })}
+                onInitiateUpload={(file, orderId, itemId, slotId) => onInitiateUpload({ file, orderId, itemId, slotId })}
                 onEditImage={(orderId, itemId, slotId, currentImage, prompt) => onEditImage({ orderId, itemId, slotId, currentImage, prompt })}
                 onReviewDesign={(orderId, approved, feedback) => onReviewDesign({ orderId, approved, feedback })}
                 onFinalizeOrder={(orderId) => onUpdateStatus({ orderId, newStatus: 'WAITING_FOR_DESIGN' as any })} // Nueva prop
@@ -122,12 +105,6 @@ const App: React.FC = () => {
         )}
 
       </main>
-
-      <PawModal
-            isOpen={!!pendingUpload}
-            onClose={() => setPendingUpload(null)}
-            onConfirm={confirmUpload}
-      />
     </div>
   );
 };

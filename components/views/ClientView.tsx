@@ -6,6 +6,7 @@ import GarmentVisualizer from '../GarmentVisualizer';
 import SleeveDesigner from '../SleeveDesigner';
 import { Search, Lock, Palette, CheckCircle, XCircle, Sparkles, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Cloud, CloudOff, History, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PawModal from '../PawModal';
 
 interface ClientViewProps {
   orders: Order[];
@@ -44,6 +45,10 @@ const ClientView: React.FC<ClientViewProps> = ({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [pendingSlotChanges, setPendingSlotChanges] = useState<Record<string, PendingSlotChange>>({});
   const [pendingSleeveChanges, setPendingSleeveChanges] = useState<Record<string, PendingSleeveChange>>({});
+  
+  // --- NEW STATE FOR UPLOAD FLOW ---
+  const [uploadTarget, setUploadTarget] = useState<{ orderId: string; itemId: string; slotId: string; } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pendingSlotsRef = useRef(pendingSlotChanges);
   const pendingSleevesRef = useRef(pendingSleeveChanges);
@@ -114,6 +119,26 @@ const ClientView: React.FC<ClientViewProps> = ({
           ...prev,
           [itemId]: { orderId, itemId, config }
       }));
+  };
+
+  const handleConfirmAndTriggerUpload = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && uploadTarget) {
+        if(saveStatus === 'pending' || saveStatus === 'saving') {
+            toast("Guardando cambios anteriores antes de subir foto...", { icon: '⏳' });
+        }
+        onInitiateUpload(file, uploadTarget.orderId, uploadTarget.itemId, uploadTarget.slotId);
+    }
+    setUploadTarget(null); // Cierra el modal y limpia el estado
+    if (event.target) {
+        event.target.value = ''; // Permite volver a seleccionar el mismo archivo
+    }
   };
 
   const isSleeveItem = (item: OrderItem) => {
@@ -220,24 +245,13 @@ const ClientView: React.FC<ClientViewProps> = ({
                   )}
                   
                   {(slot.status === 'EMPTY' || slot.status === 'REJECTED') && !isLocked && (
-                     <label className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer z-10">
+                     <button 
+                        onClick={() => setUploadTarget({ orderId: order.id, itemId: item.id, slotId: slot.id })}
+                        className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer z-10"
+                     >
                         <Upload className="w-8 h-8 text-white mb-2" />
                         <span className="text-xs text-white font-bold tracking-wide">SUBIR FOTO</span>
-                        <input 
-                            type="file" 
-                            className="hidden" 
-                            accept="image/*" 
-                            onChange={(e) => {
-                                if (e.target.files?.[0]) {
-                                    if(saveStatus === 'pending' || saveStatus === 'saving') {
-                                        toast("Guardando cambios anteriores antes de subir foto...", { icon: '⏳' });
-                                    }
-                                    onInitiateUpload(e.target.files[0], order.id, item.id, slot.id);
-                                    e.target.value = '';
-                                }
-                            }} 
-                        />
-                     </label>
+                     </button>
                   )}
                   
                   {slot.status === 'APPROVED' && (
@@ -315,6 +329,13 @@ const ClientView: React.FC<ClientViewProps> = ({
 
   return (
     <div className="space-y-8 pb-12">
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleFileSelected}
+      />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-16 z-40 bg-gray-50/95 backdrop-blur py-2">
         <div>
            <div className="flex items-center gap-3">
@@ -667,6 +688,11 @@ const ClientView: React.FC<ClientViewProps> = ({
         );
       })}
       </div>
+      <PawModal
+        isOpen={!!uploadTarget}
+        onClose={() => setUploadTarget(null)}
+        onConfirm={handleConfirmAndTriggerUpload}
+      />
     </div>
   );
 };
