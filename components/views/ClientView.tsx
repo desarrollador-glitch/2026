@@ -194,7 +194,7 @@ const ClientView: React.FC<ClientViewProps> = ({
       const isPendingSave = !!pending;
 
       return (
-      <div key={slot.id} className={`border rounded-2xl p-4 md:p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
+      <div key={slot.id} className={`border rounded-2xl p-4 sm:p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
          
          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
             <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -415,7 +415,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                </div>
             </div>
 
-            <div className="p-4 md:p-8 space-y-8 md:space-y-12">
+            <div className="p-4 sm:p-6 md:p-8 space-y-8 md:space-y-12">
               
               {order.status === OrderStatus.WAITING_FOR_DESIGN && (
                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 text-center">
@@ -431,7 +431,7 @@ const ClientView: React.FC<ClientViewProps> = ({
 
               {order.status === OrderStatus.DESIGN_REVIEW && (
                  <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl overflow-hidden shadow-lg shadow-amber-100">
-                    <div className="p-6 md:p-8 text-center border-b border-amber-100 bg-amber-50/50">
+                    <div className="p-6 sm:p-8 text-center border-b border-amber-100 bg-amber-50/50">
                         <h3 className="text-2xl font-extrabold text-amber-900 mb-2">✨ ¡Tu diseño está listo!</h3>
                         <p className="text-amber-800 mb-6">Revisa la propuesta de nuestro artista. Si te encanta, apruébala para iniciar el bordado.</p>
                         
@@ -510,7 +510,7 @@ const ClientView: React.FC<ClientViewProps> = ({
               )}
 
               {Object.entries(bundles).map(([groupId, items]) => (
-                  <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-4 md:p-8">
+                  <div key={groupId} className="border-2 border-brand-100 bg-brand-50/10 rounded-3xl p-4 sm:p-6 md:p-8">
                       <div className="flex items-center gap-3 mb-6">
                           <div className="p-3 bg-brand-100 rounded-xl text-brand-700">
                               <Box className="w-6 h-6" />
