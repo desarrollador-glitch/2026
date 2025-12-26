@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '../integrations/supabase/client';
 
-const LoginPage: React.FC = () => {
+interface LoginPageProps {
+  onSwitchToCustomer: () => void;
+}
+
+const LoginPage: React.FC<LoginPageProps> = ({ onSwitchToCustomer }) => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-8">
           Bienvenido a <span className="text-brand-600">MALCRIADOS.APP</span>
+          <span className="block text-sm font-normal text-gray-500 mt-2">Acceso Staff</span>
         </h2>
         <Auth
           supabaseClient={supabase}
@@ -37,7 +42,7 @@ const LoginPage: React.FC = () => {
               },
               forgotten_password: {
                 email_label: 'Correo electrónico',
-                password_reset_button_label: 'Enviar instrucciones de recuperación',
+                button_label: 'Enviar instrucciones de recuperación',
                 link_text: '¿Olvidaste tu contraseña?',
                 email_input_placeholder: 'Tu correo electrónico',
               },
@@ -54,6 +59,16 @@ const LoginPage: React.FC = () => {
             },
           }}
         />
+
+        <div className="mt-8 border-t border-gray-100 pt-6 text-center">
+          <p className="text-sm text-gray-500 mb-3">¿Eres cliente y quieres ver tu pedido?</p>
+          <button
+            onClick={onSwitchToCustomer}
+            className="text-brand-600 hover:text-brand-800 font-medium text-sm transition-colors"
+          >
+            Ingreso Clientes
+          </button>
+        </div>
       </div>
     </div>
   );

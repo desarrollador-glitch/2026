@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionContextProvider } from './src/components/SessionContextProvider';
+import { CustomerSessionContextProvider } from './src/components/CustomerSessionContext';
 import ToastProvider from './src/components/ToastProvider'; // Importar ToastProvider
 
 const queryClient = new QueryClient();
@@ -17,8 +18,10 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <SessionContextProvider>
-        <ToastProvider /> {/* Añadir ToastProvider aquí */}
-        <App />
+        <CustomerSessionContextProvider>
+          <ToastProvider /> {/* Añadir ToastProvider aquí */}
+          <App />
+        </CustomerSessionContextProvider>
       </SessionContextProvider>
     </QueryClientProvider>
   </React.StrictMode>

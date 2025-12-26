@@ -1,64 +1,85 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../integrations/supabase/client';
+import { UserRole } from '../../types';
 
 interface SessionContextType {
   session: Session | null;
+  userRole: UserRole | null;
   loading: boolean;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
-// MOCK SESSION PARA DESARROLLO
-// Importante: El ID debe ser un UUID válido para que Postgres no rechace las inserciones
-const MOCK_SESSION: Session = {
-  access_token: 'mock-token',
-  refresh_token: 'mock-refresh-token',
-  expires_in: 3600,
-  token_type: 'bearer',
-  user: {
-    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', // UUID válido generado aleatoriamente
-    aud: 'authenticated',
-    role: 'authenticated',
-    email: 'dev@malcriados.app',
-    email_confirmed_at: new Date().toISOString(),
-    phone: '',
-    confirmed_at: new Date().toISOString(),
-    last_sign_in_at: new Date().toISOString(),
-    app_metadata: { provider: 'email', providers: ['email'] },
-    user_metadata: {},
-    identities: [],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-};
-
 export const SessionContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // INICIALIZAMOS CON LA SESIÓN MOCK DIRECTAMENTE
-  const [session, setSession] = useState<Session | null>(MOCK_SESSION);
-  const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProfile = async (userId: string) => {
+    try {
+      console.log('Fetching profile for:', userId);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        // If profile doesn't exist, we might want to create it or just fallback
+        setUserRole(UserRole.CLIENT);
+      } else if (data) {
+        console.log('Profile found:', data.role);
+        setUserRole(data.role as UserRole);
+      } else {
+        setUserRole(UserRole.CLIENT);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching profile:', err);
+      setUserRole(UserRole.CLIENT);
+    }
+  };
 
   useEffect(() => {
-    // Intentamos obtener sesión real, pero no bloqueamos si falla
-    supabase.auth.getSession().then(({ data: { session: realSession } }) => {
-      if (realSession) {
-          setSession(realSession);
+    let mounted = true;
+
+    const handleSession = async (currentSession: Session | null) => {
+      if (!mounted) return;
+
+      console.log('Handling session change:', currentSession?.user?.email);
+      setSession(currentSession);
+
+      if (currentSession?.user) {
+        await fetchProfile(currentSession.user.id);
+      } else {
+        setUserRole(null);
       }
-      setLoading(false);
+
+      if (mounted) {
+        setLoading(false);
+      }
+    };
+
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      handleSession(initialSession);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-          setSession(session);
-      }
-      setLoading(false);
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      console.log('Auth event:', _event);
+      handleSession(currentSession);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return (
-    <SessionContext.Provider value={{ session, loading }}>
+    <SessionContext.Provider value={{ session, userRole, loading }}>
       {children}
     </SessionContext.Provider>
   );

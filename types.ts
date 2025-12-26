@@ -1,7 +1,8 @@
 export enum UserRole {
-  CLIENT = 'CLIENTE',
-  DESIGNER = 'DISEÑADOR',
-  EMBROIDERER = 'BORDADOR',
+  CLIENT = 'CLIENT',
+  DESIGNER = 'DESIGNER',
+  EMBROIDERER = 'EMBROIDERER',
+  PACKER = 'PACKER',
   ADMIN = 'ADMIN'
 }
 
@@ -19,12 +20,12 @@ export enum OrderStatus {
   DISPATCHED = 'DISPATCHED' // Enviado
 }
 
-export type EmbroideryPosition = 
-  | 'CENTER' 
-  | 'LEFT_CHEST' 
+export type EmbroideryPosition =
+  | 'CENTER'
+  | 'LEFT_CHEST'
   | 'RIGHT_CHEST'
-  | 'SLEEVE_LEFT' 
-  | 'SLEEVE_RIGHT' 
+  | 'SLEEVE_LEFT'
+  | 'SLEEVE_RIGHT'
   | 'BACK_NECK'
   | 'CENTER_LEFT'
   | 'CENTER_RIGHT'
@@ -38,9 +39,9 @@ export type SleeveFont = 'TIMES' | 'ARIAL_ROUNDED' | 'COMIC' | 'COLLEGE';
 export type SleeveIcon = 'PAW' | 'STAR' | 'BONE' | 'HEART' | 'CROWN' | 'NONE';
 
 export interface SleeveConfig {
-    text: string;
-    font: SleeveFont;
-    icon: SleeveIcon;
+  text: string;
+  font: SleeveFont;
+  icon: SleeveIcon;
 }
 // ----------------------------------
 
@@ -50,10 +51,11 @@ export interface EmbroiderySlot {
   photoUrl?: string; // Base64 (Local) -> Mapped to 'photo_url' in Supabase Storage
   position?: EmbroideryPosition;
   includeHalo: boolean; // ¿Tiene aureola?
-  
+
   // AI Status specific to this photo
   status: 'EMPTY' | 'ANALYZING' | 'APPROVED' | 'REJECTED';
   aiReason?: string;
+  createdAt?: string; // Used for deterministic sorting in packs
 }
 
 export interface OrderItem {
@@ -63,7 +65,7 @@ export interface OrderItem {
   productName: string; // e.g. "Hoodie con 2 regalones"
   quantity: number;
   price?: number; // Analytics (DB: unit_price)
-  
+
   // Product Attributes
   garmentType?: string; // Mapped to DB 'prenda'
   color?: string;       // Mapped to DB 'color'
@@ -71,9 +73,17 @@ export interface OrderItem {
 
   customizationType?: 'PORTRAIT' | 'TEXT_ONLY'; // Mapped to DB column 'customization_type'
   customizations: EmbroiderySlot[]; // If product has 2 pets, this array has 2 entries
-  
+
   // Optional Sleeve Configuration (If assigned)
   sleeve?: SleeveConfig; // Mapped to DB column 'sleeve_config' (JSONB)
+
+  // Design Fields (Per item)
+  designImage?: string;
+  technicalSheet?: string;
+  machineFile?: string;
+  designHistory?: DesignVersion[];
+  designFeedback?: string;
+  designStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 export interface DesignVersion {
@@ -86,13 +96,14 @@ export interface DesignVersion {
 
 export interface Order {
   id: string;
+  customerId?: string; // Link to registered customer
   customerName: string;
   email: string;
   phone: string;
   shippingAddress: string;
   orderDate: string;
   status: OrderStatus;
-  
+
   totalAmount?: number; // Analytics: Total order value (DB: total_amount)
   items: OrderItem[];
 
@@ -101,13 +112,13 @@ export interface Order {
   assignedEmbroidererId?: string;
 
   // Design Level
-  designImage?: string; 
+  designImage?: string;
   designHistory?: DesignVersion[]; // Historial de versiones anteriores
-  
+
   // Production Files (Uploaded by Designer at same time as designImage)
-  technicalSheet?: string; 
-  machineFile?: string; 
-  
+  technicalSheet?: string;
+  machineFile?: string;
+
   // Production Evidence
   productionIssue?: string; // Razón de la incidencia (si está ON_HOLD)
   finishedProductPhoto?: string; // Foto del bordado terminado
@@ -115,19 +126,34 @@ export interface Order {
 
   // Feedback
   clientFeedback?: string;
-  
+
   // Mockup
   generatedMockup?: string;
 }
 
 export interface Placement {
-    position: EmbroideryPosition;
-    label?: string;
+  position: EmbroideryPosition;
+  label?: string;
 }
 
 export interface StaffMember {
-    id: string;
-    name: string;
-    role: UserRole;
-    avatar: string;
+  id: string;
+  name: string;
+  role: UserRole;
+  avatar: string;
+}
+
+export interface Customer {
+  id: string;
+  email: string;
+  customerName: string;
+  phone?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerSession {
+  customerId: string;
+  email: string;
+  customerName: string;
 }

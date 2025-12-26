@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserRole } from '../types';
-import { Users, Palette, Scissors, ShieldCheck, LogOut } from 'lucide-react'; 
+import { Users, Palette, Scissors, ShieldCheck, LogOut, Package } from 'lucide-react';
 
 interface RoleSwitcherProps {
   currentRole: UserRole;
@@ -13,6 +13,7 @@ const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, 
     { id: UserRole.CLIENT, label: 'Cliente', icon: Users, color: 'text-blue-600 bg-blue-50' },
     { id: UserRole.DESIGNER, label: 'Diseñador', icon: Palette, color: 'text-purple-600 bg-purple-50' },
     { id: UserRole.EMBROIDERER, label: 'Bordador', icon: Scissors, color: 'text-orange-600 bg-orange-50' },
+    { id: UserRole.PACKER, label: 'Empacador', icon: Package, color: 'text-green-600 bg-green-50' },
     { id: UserRole.ADMIN, label: 'Admin', icon: ShieldCheck, color: 'text-gray-600 bg-gray-50' },
   ];
 
@@ -33,11 +34,10 @@ const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, 
                   <button
                     key={role.id}
                     onClick={() => onRoleChange(role.id)} // HABILITADO
-                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive 
-                        ? 'bg-brand-100 text-brand-900 ring-1 ring-brand-300' 
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 cursor-pointer'
-                    }`}
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive
+                      ? 'bg-brand-100 text-brand-900 ring-1 ring-brand-300'
+                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 cursor-pointer'
+                      }`}
                   >
                     <Icon className="w-4 h-4 mr-2" />
                     {role.label}
@@ -46,24 +46,24 @@ const RoleSwitcher: React.FC<RoleSwitcherProps> = ({ currentRole, onRoleChange, 
               })}
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
-            <button 
-                onClick={onReset}
-                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                title="Cerrar Sesión"
+            <button
+              onClick={onReset}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+              title="Cerrar Sesión"
             >
-                <LogOut className="w-5 h-5" />
+              <LogOut className="w-5 h-5" />
             </button>
 
             <div className="md:hidden">
-                <select 
+              <select
                 value={currentRole}
                 onChange={(e) => onRoleChange(e.target.value as UserRole)} // HABILITADO
                 className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-brand-500 focus:border-brand-500 sm:text-sm rounded-md bg-gray-50 text-gray-700"
-                >
+              >
                 {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                </select>
+              </select>
             </div>
           </div>
         </div>
