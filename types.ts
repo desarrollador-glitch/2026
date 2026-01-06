@@ -56,6 +56,11 @@ export interface EmbroiderySlot {
   status: 'EMPTY' | 'ANALYZING' | 'APPROVED' | 'REJECTED';
   aiReason?: string;
   createdAt?: string; // Used for deterministic sorting in packs
+
+  // NEW WIZARD FIELDS
+  fontId?: string; // e.g. 'CAIRO', 'ALTHE'
+  wizardStep: number; // 1, 2, 3
+  sleeveIconId?: string; // Optional icon for this specific pet/manga
 }
 
 export interface OrderItem {
@@ -76,6 +81,9 @@ export interface OrderItem {
 
   // Optional Sleeve Configuration (If assigned)
   sleeve?: SleeveConfig; // Mapped to DB column 'sleeve_config' (JSONB)
+
+  // NEW CUSTOMIZATION CATEGORY
+  customizationCategory?: 'COLOR' | 'COLLEGE' | 'GRANDE' | 'LINEAL';
 
   // Design Fields (Per item)
   designImage?: string;

@@ -7,6 +7,7 @@ import SleeveDesigner from '../SleeveDesigner';
 import { Search, Lock, Palette, CheckCircle, XCircle, Sparkles, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Cloud, CloudOff, History, Clock, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PawModal from '../PawModal';
+import { SLEEVE_FONTS, SLEEVE_ICONS } from '../../constants';
 
 interface ClientViewProps {
     orders: Order[];
@@ -212,6 +213,13 @@ const ClientView: React.FC<ClientViewProps> = ({
     }) => {
             const [localName, setLocalName] = useState(pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '');
 
+            // Branching Logic based on Category/SKU
+            const skuLower = item.sku?.toLowerCase() || '';
+            const isGrande = skuLower.includes('grande');
+            const isCollege = skuLower.includes('college');
+            const isLineal = skuLower.includes('lineal');
+            const isJockey = item.productName.toLowerCase().includes('jockey') || item.productName.toLowerCase().includes('gorro');
+
             useEffect(() => {
                 if (!pendingSlotChanges[slot.id]?.changes?.petName) {
                     setLocalName(slot.petName || '');
@@ -223,6 +231,9 @@ const ClientView: React.FC<ClientViewProps> = ({
             const displayValues = {
                 position: pending?.position !== undefined ? pending.position : slot.position,
                 includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
+                wizardStep: pending?.wizardStep !== undefined ? pending.wizardStep : (slot.wizardStep || 1),
+                fontId: pending?.fontId !== undefined ? pending.fontId : slot.fontId,
+                sleeveIconId: pending?.sleeveIconId !== undefined ? pending.sleeveIconId : slot.sleeveIconId,
             };
 
             const handleBlur = () => {
@@ -232,115 +243,212 @@ const ClientView: React.FC<ClientViewProps> = ({
                 }
             };
 
+            const goToStep = (step: number) => {
+                if (isLocked) return;
+                handleLocalSlotChange(order, item, slot.id, index, { wizardStep: step });
+            };
+
             const isPendingSave = !!pending;
 
             return (
-                <div key={slot.id} className={`border rounded-2xl p-4 sm:p-5 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-[0_8px_16px_-4px_rgba(0,0,0,0.08)]'} ${isPendingSave ? 'ring-1 ring-blue-300 border-blue-300' : ''}`}>
+                <div key={slot.id} className={`border rounded-3xl p-4 sm:p-6 shadow-sm transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-md'} ${isPendingSave ? 'ring-2 ring-brand-200 border-brand-300' : ''}`}>
 
-                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-50">
-                        <span className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                            <span className="bg-brand-100 text-brand-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono">{index + 1}</span>
-                            Mascota #{index + 1}
-                        </span>
-                        {slot.status === 'APPROVED' && <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-green-100"><CheckCircle className="w-3 h-3" /> Aprobado</span>}
-                        {slot.status === 'REJECTED' && <span className="bg-red-50 text-red-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-red-100"><XCircle className="w-3 h-3" /> Acción Requerida</span>}
-                        {slot.status === 'ANALYZING' && <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 ring-1 ring-blue-100 animate-pulse"><Sparkles className="w-3 h-3" /> Analizando...</span>}
+                    {/* WIZARD HEADER */}
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-brand-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm">
+                                {index + 1}
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-gray-900 leading-none">Mascota #{index + 1}</h4>
+                                <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{isGrande ? 'Personalización Grande' : isCollege ? 'Estilo College' : 'Estilo Color'}</p>
+                            </div>
+                        </div>
+
+                        {/* STEP INDICATOR DOTS */}
+                        <div className="flex gap-1.5">
+                            {[1, 2, 3].map(s => (
+                                <button
+                                    key={s}
+                                    onClick={() => !isLocked && displayValues.wizardStep >= s && goToStep(s)}
+                                    className={`w-2.5 h-1.5 rounded-full transition-all duration-300 ${displayValues.wizardStep === s ? 'w-6 bg-brand-500' : displayValues.wizardStep > s ? 'bg-brand-200' : 'bg-gray-100'}`}
+                                />
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
-                        {isPrimaryInBundle && (
-                            <div className="w-32 md:w-40 mx-auto sm:mx-0 flex-shrink-0 flex flex-col gap-2">
-                                <div className={`aspect-square rounded-xl overflow-hidden relative border group shadow-inner ${isLocked ? 'bg-gray-100 border-gray-200' : 'bg-gray-100 border-gray-200'}`}>
+                    {/* STEP 1: UBICACIÓN */}
+                    {displayValues.wizardStep === 1 && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 1: ¿Dónde lo quieres?</h5>
+                            <div className="flex flex-col items-center gap-4">
+                                <GarmentVisualizer
+                                    productName={item.productName}
+                                    sku={item.sku}
+                                    selected={displayValues.position}
+                                    onSelect={(pos) => {
+                                        if (!isLocked) {
+                                            handleLocalSlotChange(order, item, slot.id, index, { position: pos, wizardStep: 2 });
+                                            toast.success("¡Ubicación guardada!", { icon: '📍', duration: 1500 });
+                                        }
+                                    }}
+                                    slotCount={item.customizations.length}
+                                    readOnly={isLocked}
+                                />
+                                {isGrande && <p className="text-[10px] text-brand-600 font-bold bg-brand-50 px-3 py-1 rounded-full uppercase">Posición única centrada para bordado grande</p>}
+                            </div>
+                            <button
+                                onClick={() => displayValues.position && goToStep(2)}
+                                disabled={!displayValues.position}
+                                className="w-full mt-4 py-3 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-lg disabled:opacity-30 disabled:grayscale transition-all hover:scale-[1.02] active:scale-95"
+                            >
+                                CONTINUAR AL PASO 2
+                            </button>
+                        </div>
+                    )}
+
+                    {/* STEP 2: DETALLES (TEXTO / FUENTE / ICONO) */}
+                    {displayValues.wizardStep === 2 && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 2: Nombre y Estilo</h5>
+
+                            {/* NOMBRE */}
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">Nombre de tu regalón</label>
+                                <input
+                                    type="text"
+                                    disabled={isLocked}
+                                    placeholder="Ej: Firulais"
+                                    className={`w-full text-base font-medium border-gray-200 rounded-xl py-3 px-4 transition-all ${isLocked ? 'bg-gray-100' : 'bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 shadow-sm'}`}
+                                    value={localName}
+                                    onChange={(e) => setLocalName(e.target.value)}
+                                    onBlur={handleBlur}
+                                />
+                            </div>
+
+                            {/* TIPOGRAFÍA */}
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block">Tipo de letra</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {SLEEVE_FONTS.map(font => (
+                                        <button
+                                            key={font.id}
+                                            disabled={isLocked}
+                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { fontId: font.id })}
+                                            className={`py-3 px-2 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${displayValues.fontId === font.id ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-md ring-1 ring-brand-200' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}
+                                        >
+                                            <span className="text-xl leading-none" style={{ fontFamily: font.family }}>Aa</span>
+                                            <span className="text-[8px] font-bold uppercase tracking-tighter truncate w-full">{font.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* ICONO OPCIONAL (NUEVO SEGUN DISEÑO) */}
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block">Icono acompañante</label>
+                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
+                                    {SLEEVE_ICONS.map(icon => (
+                                        <button
+                                            key={icon.id}
+                                            disabled={isLocked}
+                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { sleeveIconId: icon.id })}
+                                            className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 flex items-center justify-center text-xl transition-all ${displayValues.sleeveIconId === icon.id ? 'bg-brand-50 border-brand-500 scale-105 shadow-md' : 'bg-white border-gray-100 grayscale opacity-40 hover:opacity-80'}`}
+                                        >
+                                            {icon.icon}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button onClick={() => goToStep(1)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase tracking-widest">VOLVER</button>
+                                <button onClick={() => goToStep(3)} className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg">CONTINUAR AL PASO 3</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* STEP 3: FOTO / AUREOLA */}
+                    {displayValues.wizardStep === 3 && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 3: Foto del Regalón</h5>
+
+                            <div className="flex flex-col items-center gap-6">
+                                <div className={`w-48 h-48 rounded-[2rem] overflow-hidden relative border-4 shadow-2xl transition-all duration-500 group ${isLocked ? 'border-gray-100' : 'border-brand-100 hover:border-brand-300'}`}>
                                     {slot.photoUrl ? (
-                                        <img src={slot.photoUrl} alt="Pet" className={`w-full h-full object-cover transition-transform duration-500 ${!isLocked && 'group-hover:scale-110'}`} />
+                                        <img src={slot.photoUrl} alt="Pet" className={`w-full h-full object-cover transition-transform duration-700 ${!isLocked && 'group-hover:scale-125'}`} />
                                     ) : (
-                                        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-                                            <ImageIcon className="w-8 h-8" />
-                                            <span className="text-xs text-center px-2">Subir Foto</span>
+                                        <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-300 gap-3">
+                                            <ImageIcon className="w-12 h-12" />
+                                            <span className="text-[10px] font-bold uppercase tracking-widest">Aún sin foto</span>
+                                        </div>
+                                    )}
+
+                                    {/* INDICADOR IA */}
+                                    {slot.status === 'APPROVED' && (
+                                        <div className="absolute inset-0 bg-green-500/10 flex flex-col items-center justify-end p-4 pointer-events-none">
+                                            <div className="bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase flex items-center gap-1 shadow-lg mb-2">
+                                                <Check className="w-3 h-3" /> FOTO VALIDADA
+                                            </div>
                                         </div>
                                     )}
 
                                     {(slot.status === 'EMPTY' || slot.status === 'REJECTED') && !isLocked && (
                                         <button
                                             onClick={() => setUploadTarget({ orderId: order.id, itemId: item.id, slotId: slot.id })}
-                                            className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer z-10"
+                                            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 cursor-pointer z-10"
                                         >
-                                            <Upload className="w-8 h-8 text-white mb-2" />
-                                            <span className="text-xs text-white font-bold tracking-wide">SUBIR FOTO</span>
+                                            <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl scale-75 group-hover:scale-100 transition-transform duration-500">
+                                                <Upload className="w-6 h-6 text-brand-600" />
+                                            </div>
+                                            <span className="text-[10px] text-white font-black tracking-widest mt-4 uppercase drop-shadow-md">SUBIR ARCHIVO</span>
                                         </button>
-                                    )}
-
-                                    {slot.status === 'APPROVED' && (
-                                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-green-900/80 to-transparent p-2 flex justify-center">
-                                            <span className="text-[10px] font-bold text-white flex items-center gap-1"><Check className="w-3 h-3" /> Aprobada por IA</span>
-                                        </div>
                                     )}
                                 </div>
 
                                 {slot.status === 'REJECTED' && (
-                                    <div className="bg-red-50 p-2 rounded-lg border border-red-100 animate-in slide-in-from-top-1 fade-in">
-                                        <p className="text-[10px] text-red-700 font-medium leading-tight flex gap-1">
-                                            <Info className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                                    <div className="bg-red-50 p-4 rounded-2xl border-2 border-red-100 max-w-xs animate-bounce-soft">
+                                        <p className="text-[11px] text-red-700 font-bold leading-relaxed text-center flex flex-col items-center gap-2">
+                                            <XCircle className="w-5 h-5" />
                                             {slot.aiReason}
                                         </p>
                                     </div>
                                 )}
-                            </div>
-                        )}
 
-                        <div className="flex-1 space-y-4 min-w-0">
-                            {isPrimaryInBundle && (
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 block">Nombre Mascota {index + 1} (Opcional)</label>
-                                    <input
-                                        type="text"
+                                {slot.status === 'ANALYZING' && (
+                                    <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100 w-full animate-pulse flex flex-col items-center gap-3">
+                                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                                        <span className="text-[10px] font-black text-blue-700 tracking-widest">IA ANALIZANDO CALIDAD...</span>
+                                    </div>
+                                )}
+
+                                {/* AUREOLA TOGGLE */}
+                                <div className="w-full">
+                                    <button
                                         disabled={isLocked}
-                                        placeholder="Ej: Rocky"
-                                        className={`w-full text-sm border-gray-200 rounded-lg py-2 px-3 transition-shadow ${isLocked ? 'bg-gray-100 text-gray-900 font-bold' : 'bg-white focus:ring-2 focus:ring-brand-500'}`}
-                                        value={localName}
-                                        onChange={(e) => setLocalName(e.target.value)}
-                                        onBlur={handleBlur}
-                                    />
-                                    <p className="text-[10px] text-gray-400 mt-1">Si no pones nombre, solo bordaremos la imagen.</p>
+                                        onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: !displayValues.includeHalo })}
+                                        className={`w-full py-4 px-6 rounded-2xl border-2 flex items-center justify-between transition-all ${displayValues.includeHalo ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-inner' : 'bg-gray-50 border-gray-100 text-gray-400 opacity-60'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-2xl">{displayValues.includeHalo ? '😇' : '🐶'}</span>
+                                            <div className="text-left">
+                                                <p className="text-xs font-black uppercase tracking-widest">{displayValues.includeHalo ? 'Con Aureola' : 'Sin Aureola'}</p>
+                                                <p className="text-[9px] opacity-70">Para mascotas en el cielo</p>
+                                            </div>
+                                        </div>
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${displayValues.includeHalo ? 'border-amber-500 bg-amber-500 text-white' : 'border-gray-300 bg-white'}`}>
+                                            {displayValues.includeHalo && <Check className="w-3.5 h-3.5" />}
+                                        </div>
+                                    </button>
                                 </div>
-                            )}
-
-                            <div className="w-full">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center justify-between">
-                                    <span>Ubicación</span>
-                                    {isPrimaryInBundle === false && <span className="text-[10px] bg-brand-50 text-brand-600 px-1.5 rounded">Configuración Individual</span>}
-                                </label>
-                                <GarmentVisualizer
-                                    productName={item.productName}
-                                    sku={item.sku}
-                                    selected={displayValues.position}
-                                    onSelect={(pos) => !isLocked && handleLocalSlotChange(order, item, slot.id, index, { position: pos })}
-                                    slotCount={item.customizations.length}
-                                    readOnly={isLocked}
-                                />
                             </div>
 
-                            {isPrimaryInBundle && (
-                                <div className="flex items-center gap-3">
-                                    {isLocked ? (
-                                        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border w-full ${displayValues.includeHalo ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                                            {displayValues.includeHalo ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                                            <span className="text-xs font-bold">{displayValues.includeHalo ? 'Con Aureola 😇' : 'Sin Aureola'}</span>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-lg border border-gray-100 w-full cursor-pointer hover:bg-gray-100" onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: !displayValues.includeHalo })}>
-                                            <button
-                                                className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${displayValues.includeHalo ? 'bg-brand-500 border-brand-600 text-white shadow-sm' : 'bg-white border-gray-300'}`}
-                                            >
-                                                {displayValues.includeHalo && <Check className="w-3.5 h-3.5" />}
-                                            </button>
-                                            <span className="text-xs font-medium text-gray-700">Incluir Aureola 😇</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                            <div className="flex gap-3">
+                                <button onClick={() => goToStep(2)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase tracking-widest">VOLVER</button>
+                                <button disabled={!slot.photoUrl || slot.status === 'REJECTED'} className="flex-[2] py-3 bg-brand-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg disabled:opacity-30">COMPLETADO</button>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div >
             )
         };
