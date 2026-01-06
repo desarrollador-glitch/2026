@@ -51,7 +51,11 @@ export const useOrderSystem = () => {
                     includeHalo: s.include_halo,
                     status: s.status as any,
                     aiReason: s.ai_reason,
-                    createdAt: s.created_at // Include for sorting
+                    createdAt: s.created_at, // Include for sorting
+                    wizardStep: s.wizard_step || 1,
+                    fontId: s.font_id,
+                    includeName: s.include_name,
+                    sleeveIconId: s.sleeve_icon_id
                 });
             });
 
@@ -173,6 +177,10 @@ export const useOrderSystem = () => {
             if (updates.includeHalo !== undefined) dbUpdates.include_halo = updates.includeHalo;
             if (updates.status !== undefined) dbUpdates.status = updates.status;
             if (updates.photoUrl !== undefined) dbUpdates.photo_url = updates.photoUrl;
+            if (updates.wizardStep !== undefined) dbUpdates.wizard_step = updates.wizardStep;
+            if (updates.fontId !== undefined) dbUpdates.font_id = updates.fontId;
+            if (updates.includeName !== undefined) dbUpdates.include_name = updates.includeName;
+            if (updates.sleeveIconId !== undefined) dbUpdates.sleeve_icon_id = updates.sleeveIconId;
 
             const { error } = await supabase
                 .from('embroidery_slots')

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Order, OrderStatus, SleeveConfig, OrderItem, EmbroiderySlot } from '../../types';
+import { Order, OrderStatus, SleeveConfig, OrderItem, EmbroiderySlot, EmbroideryPosition } from '../../types';
 import StatusBadge from '../StatusBadge';
 import OrderProgress from '../OrderProgress';
 import GarmentVisualizer from '../GarmentVisualizer';
@@ -7,14 +7,15 @@ import SleeveDesigner from '../SleeveDesigner';
 import { Search, Lock, Palette, CheckCircle, XCircle, Sparkles, Loader2, Image as ImageIcon, Check, Shirt, Info, Upload, Plus, Minus, Tag, Box, AlertTriangle, Send, Cloud, CloudOff, History, Clock, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PawModal from '../PawModal';
-import { SLEEVE_FONTS, SLEEVE_ICONS } from '../../constants';
+import { SLEEVE_FONTS, SLEEVE_ICONS, PRODUCT_ILLUSTRATIONS } from '../../constants';
+import PositionImageSelector from '../PositionImageSelector';
 
 interface ClientViewProps {
     orders: Order[];
     onUpdateSlot: (orderId: string, itemId: string, slotId: string, updates: any) => Promise<void>;
     onInitiateUpload: (file: File, orderId: string, itemId: string, slotId: string) => void;
     onEditImage: (orderId: string, itemId: string, slotId: string, currentImage: string, prompt: string) => void;
-    onReviewDesign: (orderId: string, approved: boolean, feedback?: string) => void;
+    onReviewDesign: (orderId: string, approved: boolean, feedback?: string, itemId?: string) => void;
     isProcessing: boolean;
     onUpdateSleeve?: (orderId: string, itemId: string, config: SleeveConfig | undefined) => Promise<void>;
     onFinalizeOrder: (orderId: string) => void;
@@ -166,9 +167,17 @@ const ClientView: React.FC<ClientViewProps> = ({
     const groupItems = (items: OrderItem[]) => {
         const bundles: Record<string, OrderItem[]> = {};
         const singles: OrderItem[] = [];
+        const upgrades: OrderItem[] = [];
 
         items.forEach(item => {
-            if (isSleeveItem(item)) return;
+            const skuLower = item.sku?.toLowerCase() || '';
+            const isUpgrade = skuLower.includes('extra') || skuLower.includes('mejora') || skuLower.includes('grande');
+
+            if (isUpgrade) {
+                upgrades.push(item);
+                return;
+            }
+
             if (item.groupId) {
                 if (!bundles[item.groupId]) bundles[item.groupId] = [];
                 bundles[item.groupId].push(item);
@@ -176,7 +185,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                 singles.push(item);
             }
         });
-        return { bundles, singles };
+        return { bundles, singles, upgrades };
     };
 
     const calculateSleeveStats = (order: Order) => {
@@ -208,250 +217,301 @@ const ClientView: React.FC<ClientViewProps> = ({
         order: Order;
         isLocked: boolean;
         isPrimaryInBundle?: boolean;
-    }> = ({
-        slot, index, item, order, isLocked, isPrimaryInBundle = true
-    }) => {
-            const [localName, setLocalName] = useState(pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '');
+    }> = ({ slot, index, item, order, isLocked, isPrimaryInBundle = true }) => {
+        const skuLower = item.sku?.toLowerCase() || '';
+        const isGrande = skuLower.includes('grande') || item.customizationCategory === 'GRANDE';
+        const isCollege = skuLower.includes('college') || item.customizationCategory === 'COLLEGE';
+        const illustrationRef = PRODUCT_ILLUSTRATIONS[isGrande ? 'GRANDE' : 'COLOR'];
 
-            // Branching Logic based on Category/SKU
-            const skuLower = item.sku?.toLowerCase() || '';
-            const isGrande = skuLower.includes('grande');
-            const isCollege = skuLower.includes('college');
-            const isLineal = skuLower.includes('lineal');
-            const isJockey = item.productName.toLowerCase().includes('jockey') || item.productName.toLowerCase().includes('gorro');
+        const [localName, setLocalName] = useState(pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '');
 
-            useEffect(() => {
-                if (!pendingSlotChanges[slot.id]?.changes?.petName) {
-                    setLocalName(slot.petName || '');
+        useEffect(() => {
+            if (!pendingSlotChanges[slot.id]?.changes?.petName) {
+                setLocalName(slot.petName || '');
+            }
+        }, [slot.petName, pendingSlotChanges[slot.id]]);
+
+        const pending = pendingSlotChanges[slot.id]?.changes;
+        const displayValues = {
+            position: pending?.position !== undefined ? pending.position : slot.position,
+            includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
+            wizardStep: pending?.wizardStep !== undefined ? pending.wizardStep : (slot.wizardStep || 1),
+            fontId: pending?.fontId !== undefined ? pending.fontId : slot.fontId,
+            sleeveIconId: pending?.sleeveIconId !== undefined ? pending.sleeveIconId : slot.sleeveIconId,
+            includeName: pending?.includeName !== undefined ? pending.includeName : (slot.includeName ?? false),
+        };
+
+        const multiPetPositions: Record<number, { pos: EmbroideryPosition; label: string }[]> = {
+            5: [
+                { pos: 'FAR_LEFT', label: 'Lado izquierdo' },
+                { pos: 'CENTER_LEFT', label: 'Lado centro izquierdo' },
+                { pos: 'CENTER', label: 'Lado centro' },
+                { pos: 'CENTER_RIGHT', label: 'Lado centro derecho' },
+                { pos: 'FAR_RIGHT', label: 'Lado derecho' },
+            ]
+        };
+
+        const isFixedPositionProduct = item.customizations.length >= 2;
+        const fixedPosInfo = isFixedPositionProduct ? (multiPetPositions[item.customizations.length]?.[index] || { label: `Posición ${index + 1}` }) : null;
+
+        useEffect(() => {
+            if (fixedPosInfo && !displayValues.position) {
+                const pos = (fixedPosInfo as any).pos;
+                if (pos) {
+                    handleLocalSlotChange(order, item, slot.id, index, { position: pos });
                 }
-            }, [slot.petName, pendingSlotChanges[slot.id]]);
+            }
+            if (isGrande && !displayValues.position) {
+                handleLocalSlotChange(order, item, slot.id, index, { position: 'BACK_NECK' });
+            }
+        }, [fixedPosInfo, isGrande, displayValues.position, handleLocalSlotChange, order, item, slot.id, index]);
 
-            const pending = pendingSlotChanges[slot.id]?.changes;
+        const handleBlur = () => {
+            const currentSavedOrPending = pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '';
+            if (localName !== currentSavedOrPending) {
+                handleLocalSlotChange(order, item, slot.id, index, { petName: localName });
+            }
+        };
 
-            const displayValues = {
-                position: pending?.position !== undefined ? pending.position : slot.position,
-                includeHalo: pending?.includeHalo !== undefined ? pending.includeHalo : slot.includeHalo,
-                wizardStep: pending?.wizardStep !== undefined ? pending.wizardStep : (slot.wizardStep || 1),
-                fontId: pending?.fontId !== undefined ? pending.fontId : slot.fontId,
-                sleeveIconId: pending?.sleeveIconId !== undefined ? pending.sleeveIconId : slot.sleeveIconId,
-            };
+        const goToStep = (step: number) => {
+            if (isLocked) return;
+            handleLocalSlotChange(order, item, slot.id, index, { wizardStep: step });
+        };
 
-            const handleBlur = () => {
-                const currentSavedOrPending = pendingSlotChanges[slot.id]?.changes?.petName ?? slot.petName ?? '';
-                if (localName !== currentSavedOrPending) {
-                    handleLocalSlotChange(order, item, slot.id, index, { petName: localName });
-                }
-            };
+        const isPendingSave = !!pendingSlotChanges[slot.id];
 
-            const goToStep = (step: number) => {
-                if (isLocked) return;
-                handleLocalSlotChange(order, item, slot.id, index, { wizardStep: step });
-            };
-
-            const isPendingSave = !!pending;
-
-            return (
-                <div key={slot.id} className={`border rounded-3xl p-4 sm:p-6 shadow-sm transition-all duration-300 relative ${isLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-white border-gray-200 hover:shadow-md'} ${isPendingSave ? 'ring-2 ring-brand-200 border-brand-300' : ''}`}>
-
-                    {/* WIZARD HEADER */}
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-brand-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm">
-                                {index + 1}
-                            </div>
-                            <div>
-                                <h4 className="font-bold text-gray-900 leading-none">Mascota #{index + 1}</h4>
-                                <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{isGrande ? 'Personalización Grande' : isCollege ? 'Estilo College' : 'Estilo Color'}</p>
-                            </div>
+        return (
+            <div key={slot.id} className={`bg-white border-2 rounded-[2.5rem] p-6 sm:p-8 transition-all duration-500 shadow-sm hover:shadow-xl ${displayValues.wizardStep === 3 && slot.status === 'APPROVED' ? 'border-green-100 ring-2 ring-green-50' : 'border-gray-50'} ${isPendingSave ? 'ring-2 ring-brand-100' : ''}`}>
+                {/* SLOT HEADER */}
+                <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-50">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-gray-900 text-white rounded-2xl flex items-center justify-center font-black text-sm shadow-lg">
+                            {index + 1}
                         </div>
-
-                        {/* STEP INDICATOR DOTS */}
-                        <div className="flex gap-1.5">
-                            {[1, 2, 3].map(s => (
-                                <button
-                                    key={s}
-                                    onClick={() => !isLocked && displayValues.wizardStep >= s && goToStep(s)}
-                                    className={`w-2.5 h-1.5 rounded-full transition-all duration-300 ${displayValues.wizardStep === s ? 'w-6 bg-brand-500' : displayValues.wizardStep > s ? 'bg-brand-200' : 'bg-gray-100'}`}
-                                />
-                            ))}
+                        <div>
+                            <h4 className="font-bold text-gray-900 leading-none">
+                                {fixedPosInfo ? `Retrato ${index + 1}: ${fixedPosInfo.label}` : `Mascota #${index + 1}`}
+                            </h4>
+                            <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{isGrande ? 'Personalización Grande' : isCollege ? 'Estilo College' : 'Estilo Color'}</p>
                         </div>
                     </div>
 
+                    <div className="flex gap-1.5">
+                        {[1, 2, 3].map(s => (
+                            <button
+                                key={s}
+                                onClick={() => !isLocked && displayValues.wizardStep >= s && goToStep(s)}
+                                className={`h-1.5 rounded-full transition-all duration-500 ${displayValues.wizardStep === s ? 'w-8 bg-brand-600' : 'w-2 bg-gray-100 opacity-50'}`}
+                            />
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-8">
                     {/* STEP 1: UBICACIÓN */}
                     {displayValues.wizardStep === 1 && (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 1: ¿Dónde lo quieres?</h5>
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 1: Ubicación</h5>
+
                             <div className="flex flex-col items-center gap-4">
-                                <GarmentVisualizer
-                                    productName={item.productName}
-                                    sku={item.sku}
-                                    selected={displayValues.position}
-                                    onSelect={(pos) => {
-                                        if (!isLocked) {
-                                            handleLocalSlotChange(order, item, slot.id, index, { position: pos, wizardStep: 2 });
-                                            toast.success("¡Ubicación guardada!", { icon: '📍', duration: 1500 });
-                                        }
-                                    }}
-                                    slotCount={item.customizations.length}
-                                    readOnly={isLocked}
-                                />
+                                {isFixedPositionProduct ? (
+                                    <div className="w-full bg-gray-50 border border-gray-100 rounded-2xl p-4 flex flex-col items-center gap-3">
+                                        <div className="w-16 h-16 bg-white rounded-lg border border-gray-100 flex items-center justify-center p-2">
+                                            <img src="/refs/position-marker.png" className="w-full h-full object-contain opacity-40" alt="Pos" />
+                                        </div>
+                                        <p className="text-xs font-bold text-gray-700 uppercase">{fixedPosInfo?.label}</p>
+                                    </div>
+                                ) : (
+                                    <PositionImageSelector
+                                        productName={item.productName}
+                                        sku={item.sku}
+                                        selected={displayValues.position}
+                                        onSelect={(pos) => {
+                                            if (!isLocked) {
+                                                handleLocalSlotChange(order, item, slot.id, index, { position: pos, wizardStep: 2 });
+                                                toast.success("¡Ubicación guardada!", { icon: '📍', duration: 1500 });
+                                            }
+                                        }}
+                                        slotCount={item.customizations.length}
+                                        readOnly={isLocked}
+                                    />
+                                )}
                                 {isGrande && <p className="text-[10px] text-brand-600 font-bold bg-brand-50 px-3 py-1 rounded-full uppercase">Posición única centrada para bordado grande</p>}
                             </div>
                             <button
-                                onClick={() => displayValues.position && goToStep(2)}
-                                disabled={!displayValues.position}
-                                className="w-full mt-4 py-3 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-lg disabled:opacity-30 disabled:grayscale transition-all hover:scale-[1.02] active:scale-95"
+                                onClick={() => (displayValues.position || isGrande) && goToStep(2)}
+                                disabled={!displayValues.position && !isGrande}
+                                className="w-full mt-4 py-3 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-lg disabled:opacity-30 transition-all hover:scale-[1.02]"
                             >
                                 CONTINUAR AL PASO 2
                             </button>
                         </div>
                     )}
 
-                    {/* STEP 2: DETALLES (TEXTO / FUENTE / ICONO) */}
+                    {/* STEP 2: PERSONALIZACIÓN DE NOMBRE */}
                     {displayValues.wizardStep === 2 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 2: Nombre y Estilo</h5>
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 2: ¿Deseas agregar el nombre?</h5>
 
-                            {/* NOMBRE */}
-                            <div>
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">Nombre de tu regalón</label>
-                                <input
-                                    type="text"
-                                    disabled={isLocked}
-                                    placeholder="Ej: Firulais"
-                                    className={`w-full text-base font-medium border-gray-200 rounded-xl py-3 px-4 transition-all ${isLocked ? 'bg-gray-100' : 'bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 shadow-sm'}`}
-                                    value={localName}
-                                    onChange={(e) => setLocalName(e.target.value)}
-                                    onBlur={handleBlur}
-                                />
-                            </div>
-
-                            {/* TIPOGRAFÍA */}
-                            <div>
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block">Tipo de letra</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {SLEEVE_FONTS.map(font => (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block text-center italic">¿Quieres agregar el nombre de tu mascota debajo del retrato?</label>
+                                    <div className="flex gap-2 mb-4">
                                         <button
-                                            key={font.id}
-                                            disabled={isLocked}
-                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { fontId: font.id })}
-                                            className={`py-3 px-2 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${displayValues.fontId === font.id ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-md ring-1 ring-brand-200' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}`}
+                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeName: true })}
+                                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all ${displayValues.includeName ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400'}`}
                                         >
-                                            <span className="text-xl leading-none" style={{ fontFamily: font.family }}>Aa</span>
-                                            <span className="text-[8px] font-bold uppercase tracking-tighter truncate w-full">{font.label}</span>
+                                            SÍ
                                         </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* ICONO OPCIONAL (NUEVO SEGUN DISEÑO) */}
-                            <div>
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block">Icono acompañante</label>
-                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
-                                    {SLEEVE_ICONS.map(icon => (
                                         <button
-                                            key={icon.id}
-                                            disabled={isLocked}
-                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { sleeveIconId: icon.id })}
-                                            className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 flex items-center justify-center text-xl transition-all ${displayValues.sleeveIconId === icon.id ? 'bg-brand-50 border-brand-500 scale-105 shadow-md' : 'bg-white border-gray-100 grayscale opacity-40 hover:opacity-80'}`}
+                                            onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeName: false, wizardStep: 3 })}
+                                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all ${!displayValues.includeName ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400'}`}
                                         >
-                                            {icon.icon}
+                                            NO
                                         </button>
-                                    ))}
+                                    </div>
                                 </div>
+
+                                {displayValues.includeName && (
+                                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 block text-center italic">Selecciona la tipografía que debe tener el nombre</label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {SLEEVE_FONTS.filter(f => ['TIMES', 'COMIC', 'COLLEGE'].includes(f.shorthand.toUpperCase()) || ['TIMES', 'COMIC', 'COLLEGE'].includes(f.id.toUpperCase())).map(font => (
+                                                <button
+                                                    key={font.id}
+                                                    disabled={isLocked}
+                                                    onClick={() => handleLocalSlotChange(order, item, slot.id, index, { fontId: font.id, wizardStep: 3 })}
+                                                    className={`py-3 px-1 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${displayValues.fontId === font.id ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-sm ring-1 ring-brand-200' : 'bg-white border-gray-100 text-gray-300'}`}
+                                                >
+                                                    <span className="text-2xl leading-none" style={{ fontFamily: font.family }}>Aa</span>
+                                                    <span className="text-[8px] font-black">{font.shorthand}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-3">
                                 <button onClick={() => goToStep(1)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase tracking-widest">VOLVER</button>
-                                <button onClick={() => goToStep(3)} className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg">CONTINUAR AL PASO 3</button>
+                                <button
+                                    onClick={() => goToStep(3)}
+                                    // Continuar si dice NO, o si dice SÍ y seleccionó tipografía
+                                    disabled={displayValues.includeName && !displayValues.fontId}
+                                    className="flex-[2] py-3 bg-gray-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg disabled:opacity-30"
+                                >
+                                    CONTINUAR AL PASO 3
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    {/* STEP 3: FOTO / AUREOLA */}
+                    {/* STEP 3: FOTO / NOMBRE / AUREOLA */}
                     {displayValues.wizardStep === 3 && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 3: Foto del Regalón</h5>
+                            <h5 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Paso 3: Foto, Nombre y Aureola</h5>
 
-                            <div className="flex flex-col items-center gap-6">
-                                <div className={`w-48 h-48 rounded-[2rem] overflow-hidden relative border-4 shadow-2xl transition-all duration-500 group ${isLocked ? 'border-gray-100' : 'border-brand-100 hover:border-brand-300'}`}>
-                                    {slot.photoUrl ? (
-                                        <img src={slot.photoUrl} alt="Pet" className={`w-full h-full object-cover transition-transform duration-700 ${!isLocked && 'group-hover:scale-125'}`} />
-                                    ) : (
-                                        <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-300 gap-3">
-                                            <ImageIcon className="w-12 h-12" />
-                                            <span className="text-[10px] font-bold uppercase tracking-widest">Aún sin foto</span>
-                                        </div>
-                                    )}
-
-                                    {/* INDICADOR IA */}
-                                    {slot.status === 'APPROVED' && (
-                                        <div className="absolute inset-0 bg-green-500/10 flex flex-col items-center justify-end p-4 pointer-events-none">
-                                            <div className="bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase flex items-center gap-1 shadow-lg mb-2">
-                                                <Check className="w-3 h-3" /> FOTO VALIDADA
+                            <div className="space-y-6">
+                                <div className="flex flex-col items-center gap-6">
+                                    <div className={`w-56 h-56 rounded-3xl overflow-hidden relative border-4 shadow-xl transition-all duration-500 group ${isLocked ? 'border-gray-100' : 'border-brand-100 hover:border-brand-300'}`}>
+                                        {slot.photoUrl ? (
+                                            <img src={slot.photoUrl} alt="Pet" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center h-full bg-gray-50 text-gray-300 gap-3 border-dashed border-4 border-gray-200 m-2 rounded-2xl">
+                                                <ImageIcon className="w-12 h-12" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest">SUBIR FOTO</span>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {(slot.status === 'EMPTY' || slot.status === 'REJECTED') && !isLocked && (
-                                        <button
-                                            onClick={() => setUploadTarget({ orderId: order.id, itemId: item.id, slotId: slot.id })}
-                                            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 cursor-pointer z-10"
-                                        >
-                                            <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl scale-75 group-hover:scale-100 transition-transform duration-500">
-                                                <Upload className="w-6 h-6 text-brand-600" />
+                                        {slot.status === 'APPROVED' && (
+                                            <div className="absolute inset-0 bg-green-500/10 flex flex-col items-center justify-end p-4">
+                                                <div className="bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase flex items-center gap-1 shadow-lg mb-2">
+                                                    <Check className="w-3 h-3" /> VALIDADA
+                                                </div>
                                             </div>
-                                            <span className="text-[10px] text-white font-black tracking-widest mt-4 uppercase drop-shadow-md">SUBIR ARCHIVO</span>
-                                        </button>
+                                        )}
+
+                                        {!isLocked && (slot.status === 'EMPTY' || slot.status === 'REJECTED') && (
+                                            <button
+                                                onClick={() => setUploadTarget({ orderId: order.id, itemId: item.id, slotId: slot.id })}
+                                                className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer z-10"
+                                            >
+                                                <Upload className="w-10 h-10 text-white mb-2" />
+                                                <span className="text-xs text-white font-black uppercase tracking-widest">SUBIR FOTO</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* AI LOGIC RESULT DISPLAY */}
+                                    {slot.status !== 'EMPTY' && (
+                                        <div className={`w-full p-4 rounded-2xl border ${slot.status === 'APPROVED' ? 'bg-green-50 border-green-200 text-green-700' : slot.status === 'REJECTED' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                {slot.status === 'APPROVED' ? <CheckCircle className="w-5 h-5" /> : slot.status === 'REJECTED' ? <AlertTriangle className="w-5 h-5" /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                                                <span className="font-bold text-sm uppercase">Resultado del análisis IA</span>
+                                            </div>
+                                            <p className="text-xs leading-relaxed">
+                                                {slot.status === 'APPROVED' ? '¡La imagen es perfecta para el bordado! Nuestro sistema ha validado la nitidez y el enfoque.' : slot.status === 'REJECTED' ? (slot.aiReason || 'La imagen no cumple con los requisitos de calidad. Por favor intenta con una foto más nítida y enfocada.') : 'Analizando tu imagen... un momento por favor.'}
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
 
-                                {slot.status === 'REJECTED' && (
-                                    <div className="bg-red-50 p-4 rounded-2xl border-2 border-red-100 max-w-xs animate-bounce-soft">
-                                        <p className="text-[11px] text-red-700 font-bold leading-relaxed text-center flex flex-col items-center gap-2">
-                                            <XCircle className="w-5 h-5" />
-                                            {slot.aiReason}
-                                        </p>
-                                    </div>
-                                )}
+                                <div className={`grid gap-4 ${displayValues.includeName ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                                    {displayValues.includeName && (
+                                        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 block italic text-center">Nombre que irá bajo el retrato</label>
+                                            <input
+                                                type="text"
+                                                disabled={isLocked}
+                                                placeholder="Nombre para el diseño..."
+                                                className="w-full border-gray-200 rounded-xl py-3 px-4 text-sm focus:ring-brand-500 shadow-sm text-center font-bold"
+                                                value={localName}
+                                                onChange={(e) => setLocalName(e.target.value)}
+                                                onBlur={handleBlur}
+                                            />
+                                        </div>
+                                    )}
 
-                                {slot.status === 'ANALYZING' && (
-                                    <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100 w-full animate-pulse flex flex-col items-center gap-3">
-                                        <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                                        <span className="text-[10px] font-black text-blue-700 tracking-widest">IA ANALIZANDO CALIDAD...</span>
+                                    <div className={`animate-in fade-in slide-in-from-top-2 duration-300 ${!displayValues.includeName ? 'max-w-xs mx-auto w-full' : ''}`}>
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block text-center italic">¿Incluir aureola a mi mascota?</label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: true })}
+                                                className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all text-xs ${displayValues.includeHalo ? 'bg-amber-100 border-amber-400 text-amber-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400'}`}
+                                            >
+                                                SÍ
+                                            </button>
+                                            <button
+                                                onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: false })}
+                                                className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all text-xs ${!displayValues.includeHalo ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-sm' : 'bg-white border-gray-100 text-gray-400'}`}
+                                            >
+                                                NO
+                                            </button>
+                                        </div>
                                     </div>
-                                )}
+                                </div>
 
-                                {/* AUREOLA TOGGLE */}
-                                <div className="w-full">
+                                <div className="flex gap-3 pt-4">
+                                    <button onClick={() => goToStep(2)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase tracking-widest">VOLVER</button>
                                     <button
-                                        disabled={isLocked}
-                                        onClick={() => handleLocalSlotChange(order, item, slot.id, index, { includeHalo: !displayValues.includeHalo })}
-                                        className={`w-full py-4 px-6 rounded-2xl border-2 flex items-center justify-between transition-all ${displayValues.includeHalo ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-inner' : 'bg-gray-50 border-gray-100 text-gray-400 opacity-60'}`}
+                                        disabled={!slot.photoUrl || slot.status === 'REJECTED' || (displayValues.includeName && !localName)}
+                                        onClick={() => {
+                                            toast.success("¡Información enviada con éxito!", { icon: '✨' });
+                                            // Here would go the logic to mark as ready if needed, 
+                                            // but the parent handles status changes based on slots.
+                                        }}
+                                        className="flex-[2] py-3 bg-brand-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg disabled:opacity-30"
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-2xl">{displayValues.includeHalo ? '😇' : '🐶'}</span>
-                                            <div className="text-left">
-                                                <p className="text-xs font-black uppercase tracking-widest">{displayValues.includeHalo ? 'Con Aureola' : 'Sin Aureola'}</p>
-                                                <p className="text-[9px] opacity-70">Para mascotas en el cielo</p>
-                                            </div>
-                                        </div>
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${displayValues.includeHalo ? 'border-amber-500 bg-amber-500 text-white' : 'border-gray-300 bg-white'}`}>
-                                            {displayValues.includeHalo && <Check className="w-3.5 h-3.5" />}
-                                        </div>
+                                        FINALIZAR MASCOTA
                                     </button>
                                 </div>
                             </div>
-
-                            <div className="flex gap-3">
-                                <button onClick={() => goToStep(2)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase tracking-widest">VOLVER</button>
-                                <button disabled={!slot.photoUrl || slot.status === 'REJECTED'} className="flex-[2] py-3 bg-brand-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg disabled:opacity-30">COMPLETADO</button>
-                            </div>
                         </div>
                     )}
-                </div >
-            )
-        };
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-8 pb-12">
@@ -502,7 +562,7 @@ const ClientView: React.FC<ClientViewProps> = ({
                         OrderStatus.DESIGN_REJECTED
                     ].includes(order.status);
 
-                    const { bundles, singles } = groupItems(order.items);
+                    const { bundles, singles, upgrades } = groupItems(order.items);
                     const sleeveStats = calculateSleeveStats(order);
 
                     const itemsByGroup: Record<string, OrderItem[]> = {};
@@ -966,6 +1026,85 @@ const ClientView: React.FC<ClientViewProps> = ({
                                                 )}
                                             </div>
                                         ))}
+
+                                        {/* MEJORAS DE PRENDA SECTION */}
+                                        {upgrades.length > 0 && (
+                                            <div className="space-y-8 pt-12 border-t-4 border-yellow-400">
+                                                <div className="bg-yellow-400 text-black py-4 px-8 -mx-8 sm:-mx-12 mb-8 shadow-md">
+                                                    <h3 className="text-2xl font-black uppercase tracking-[0.2em] italic">MEJORAS DE PRENDA</h3>
+                                                </div>
+
+                                                <div className="grid gap-8">
+                                                    {upgrades.map(item => {
+                                                        const skuLower = item.sku?.toLowerCase() || '';
+                                                        const isManga = skuLower.includes('manga');
+                                                        const isGrande = skuLower.includes('grande');
+
+                                                        return (
+                                                            <div key={item.id} className="bg-white border-2 border-gray-100 rounded-[2.5rem] p-6 sm:p-8 shadow-lg hover:shadow-xl transition-shadow duration-500">
+                                                                <div className="flex items-start gap-6 mb-6">
+                                                                    <div className="w-20 h-20 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-center p-3">
+                                                                        <img
+                                                                            src={isManga ? '/refs/manga-thumb.png' : isGrande ? '/refs/grande-thumb.png' : '/refs/upgrade-thumb.png'}
+                                                                            className="w-full h-full object-contain opacity-50"
+                                                                            alt="Icon"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <h4 className="text-xl font-black text-gray-900 leading-tight uppercase tracking-tight">{item.productName}</h4>
+                                                                        {isManga && <p className="text-[10px] text-gray-500 font-medium italic mt-1">Este item es parte de tu prenda principal</p>}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Custom content per upgrade type */}
+                                                                <div className="space-y-8">
+                                                                    {item.customizations.length > 0 ? (
+                                                                        <div className="grid md:grid-cols-1 gap-8">
+                                                                            {item.customizations.map((slot, index) => (
+                                                                                <PetSlotCard key={slot.id} slot={slot} index={index} item={item} order={order} isLocked={isLocked} />
+                                                                            ))}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100">
+                                                                            {isManga ? (
+                                                                                <div className="space-y-6">
+                                                                                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100">
+                                                                                        <div>
+                                                                                            <h5 className="font-black text-xs uppercase tracking-widest text-gray-400 mb-1">Paso 1: Configura tu Manga</h5>
+                                                                                            <p className="text-xs text-gray-600 font-medium italic">Configura el texto e icono</p>
+                                                                                        </div>
+                                                                                        {!item.sleeve && !isLocked && (
+                                                                                            <button
+                                                                                                onClick={() => handleLocalSleeveChange(order.id, item.id, { text: '', font: 'ARIAL_ROUNDED', icon: 'NONE' })}
+                                                                                                className="bg-brand-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:scale-105 transition-all"
+                                                                                            >
+                                                                                                EDITAR
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {item.sleeve ? (
+                                                                                        <SleeveDesigner config={item.sleeve} readOnly={isLocked} onChange={(newConfig) => handleLocalSleeveChange(order.id, item.id, newConfig)} />
+                                                                                    ) : (
+                                                                                        <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-3xl">
+                                                                                            <Tag className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                                                                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Sin configuración</p>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="text-center py-6">
+                                                                                    <p className="text-xs text-gray-400 uppercase font-black">Este item se detallará en el diseño final</p>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Botón de Envío al final */}
                                         {!isLocked && (

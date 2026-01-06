@@ -35,7 +35,7 @@ export type EmbroideryPosition =
 export type GarmentType = 'HOODIE' | 'CREWNECK' | 'TSHIRT' | 'CAP';
 
 // --- SLEEVE CONFIGURATION TYPES ---
-export type SleeveFont = 'TIMES' | 'ARIAL_ROUNDED' | 'COMIC' | 'COLLEGE';
+export type SleeveFont = 'TIMES' | 'ARIAL_ROUNDED' | 'COMIC' | 'COLLEGE' | 'CAIRO' | 'ALTHE';
 export type SleeveIcon = 'PAW' | 'STAR' | 'BONE' | 'HEART' | 'CROWN' | 'NONE';
 
 export interface SleeveConfig {
@@ -61,6 +61,7 @@ export interface EmbroiderySlot {
   fontId?: string; // e.g. 'CAIRO', 'ALTHE'
   wizardStep: number; // 1, 2, 3
   sleeveIconId?: string; // Optional icon for this specific pet/manga
+  includeName?: boolean; // NEW: Should the name be included in the embroidery?
 }
 
 export interface OrderItem {

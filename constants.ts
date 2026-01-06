@@ -2,13 +2,13 @@
 import { Order, OrderStatus, UserRole, StaffMember, SleeveFont, SleeveIcon } from './types';
 
 // --- SLEEVE OPTIONS ---
-export const SLEEVE_FONTS: { id: SleeveFont; label: string; family: string }[] = [
-  { id: 'TIMES', label: 'Times New Roman', family: '"Times New Roman", serif' },
-  { id: 'ARIAL_ROUNDED', label: 'Arial Rounded', family: '"Arial Rounded MT Bold", "Arial", sans-serif' },
-  { id: 'COMIC', label: 'Web Comic', family: '"Comic Sans MS", "Chalkboard SE", sans-serif' },
-  { id: 'COLLEGE', label: 'College', family: '"Rockwell", "Courier New", serif' }, // Approx for college look
-  { id: 'CAIRO', label: 'Cairo', family: '"Inter", sans-serif' }, // Placeholder for Cairo
-  { id: 'ALTHE', label: 'Althe', family: 'serif' }, // Placeholder for Althe
+export const SLEEVE_FONTS: { id: SleeveFont; label: string; family: string; shorthand: string }[] = [
+  { id: 'TIMES', label: 'Times New Roman', family: '"Times New Roman", serif', shorthand: 'TIM' },
+  { id: 'ARIAL_ROUNDED', label: 'Arial Rounded', family: '"Arial Rounded MT Bold", "Arial", sans-serif', shorthand: 'ARI' },
+  { id: 'COMIC', label: 'Web Comic', family: '"Comic Sans MS", "Chalkboard SE", sans-serif', shorthand: 'COM' },
+  { id: 'COLLEGE', label: 'College', family: '"Rockwell", "Courier New", serif', shorthand: 'COL' },
+  { id: 'CAIRO', label: 'Cairo', family: '"Inter", sans-serif', shorthand: 'CAI' },
+  { id: 'ALTHE', label: 'Althe', family: 'serif', shorthand: 'ALT' },
 ];
 
 export const SLEEVE_ICONS: { id: SleeveIcon; label: string; icon: string }[] = [
@@ -19,6 +19,42 @@ export const SLEEVE_ICONS: { id: SleeveIcon; label: string; icon: string }[] = [
   { id: 'HEART', label: 'Corazón', icon: '❤️' },
   { id: 'CROWN', label: 'Corona', icon: '👑' },
 ];
+
+/**
+ * PRODUCT_ILLUSTRATIONS
+ * Maps garment categories or SKUs to specific reference images for the 3-step wizard.
+ * The user will provide these URLs.
+ */
+export const PRODUCT_ILLUSTRATIONS: Record<string, {
+  steps: Record<number, {
+    main?: string;
+    options?: Record<string, string>;
+  }>
+}> = {
+  'COLOR': {
+    steps: {
+      1: { options: { 'IZQUIERDA': '/refs/hoodie-left.png', 'CENTRO': '/refs/hoodie-center.png' } },
+      3: { main: '/refs/hoodie-left.png' } // Fallback to left view for detail if specific detail not provided
+    }
+  },
+  'GRANDE': {
+    steps: {
+      1: { main: '/refs/hoodie-center.png' }, // Use center as proxy for big back embroidery context if specific back ref missing
+      3: { main: '/refs/hoodie-center.png' }
+    }
+  },
+  'MANGA': {
+    steps: {
+      1: { main: '/refs/sleeve-ref.png' }
+    }
+  },
+  'JOCKEY': {
+    steps: {
+      1: { options: { 'LEFT': '/refs/jockey-left.png', 'RIGHT': '/refs/jockey-right.png' } },
+      3: { main: '/refs/jockey-detail.png' }
+    }
+  }
+};
 
 // --- MOCK INITIAL DATA ---
 export const INITIAL_ORDERS: Order[] = [
@@ -40,7 +76,7 @@ export const INITIAL_ORDERS: Order[] = [
         productName: 'Hoodie Pack',
         price: 42500,
         quantity: 1,
-        customizations: [{ id: 'S1', status: 'EMPTY', includeHalo: true, position: 'CENTER' }]
+        customizations: [{ id: 'S1', status: 'EMPTY', includeHalo: true, position: 'CENTER', wizardStep: 1 }]
       },
       {
         id: '4001-J',
@@ -49,7 +85,7 @@ export const INITIAL_ORDERS: Order[] = [
         productName: 'Jockey Pack',
         price: 22500,
         quantity: 1,
-        customizations: [{ id: 'S2', status: 'EMPTY', includeHalo: true, position: 'CENTER' }] // Status will sync with S1
+        customizations: [{ id: 'S2', status: 'EMPTY', includeHalo: true, position: 'CENTER', wizardStep: 1 }] // Status will sync with S1
       }
     ]
   },
@@ -71,7 +107,7 @@ export const INITIAL_ORDERS: Order[] = [
         quantity: 1,
         price: 45000,
         customizations: [
-          { id: 'C1', status: 'APPROVED', includeHalo: false, position: 'CENTER_LEFT', photoUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80', petName: 'Rocky' },
+          { id: 'C1', status: 'APPROVED', includeHalo: false, position: 'CENTER_LEFT', photoUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80', petName: 'Rocky', wizardStep: 3 },
         ],
         sleeve: { text: 'Rebeca', font: 'COMIC', icon: 'PAW' } // Consumed 1 credit
       },
@@ -82,7 +118,7 @@ export const INITIAL_ORDERS: Order[] = [
         quantity: 1,
         price: 45000,
         customizations: [
-          { id: 'C2', status: 'APPROVED', includeHalo: false, position: 'CENTER', photoUrl: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80', petName: 'Luna' }
+          { id: 'C2', status: 'APPROVED', includeHalo: false, position: 'CENTER', photoUrl: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80', petName: 'Luna', wizardStep: 3 }
         ]
       },
       // Credit source
@@ -115,7 +151,7 @@ export const INITIAL_ORDERS: Order[] = [
         productName: 'Jockey Bordado',
         price: 25000,
         quantity: 1,
-        customizations: [{ id: 'J1', status: 'APPROVED', includeHalo: false, position: 'CENTER' }]
+        customizations: [{ id: 'J1', status: 'APPROVED', includeHalo: false, position: 'CENTER', wizardStep: 3 }]
       }
     ],
     finishedProductPhoto: 'https://images.unsplash.com/photo-1575424909138-46b05e5919ec?auto=format&fit=crop&w=500&q=80',
